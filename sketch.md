@@ -15,6 +15,8 @@ to be inconsistent).
   **Delay**). No Class B for now.
 - EU868, single WM1302 SPI module (SX1302 + 2x SX1250 + SX1261).
 - Ethernet only (W5500), optional PoE later via WIZnet PoE module.
+- Power: 24 V DC like an industrial PLC (IEC 61131-2 range 19.2–30 V), wide-input
+  front end so 12 V supplies also work.
 - Direct connection to ChirpStack's MQTT broker, replacing what Concentratord +
   ChirpStack MQTT Forwarder do on a Linux gateway.
 - MQTT authentication: per-gateway username/password, TLS with CA certificate only
@@ -31,19 +33,24 @@ to be inconsistent).
 | W5500-EVB-Pico2 | MCU (RP2350, 520 KB SRAM, 2 MB flash) + Ethernet | GP16–GP21 are used internally for the W5500 |
 | Seeed WM1302 SPI (EU868) | LoRa concentrator, mPCIe 52-pin | SX1302 reset is active HIGH on the SPI version |
 | mPCIe socket + standoff/latch | Holds the WM1302 | 52-pin, 0.8 mm pitch |
+| Wide-input buck 24 V → 5 V, ≥ 2 A | Primary supply (input 9–36 V) | e.g. LMR36520 / TPS54360B class, 60 V rated |
+| Input protection | Reverse polarity, surge, overcurrent | P-FET or ideal-diode controller, TVS (SMBJ33A class), PTC/fuse |
 | 5 V → 3.3 V buck, ≥ 2 A | Dedicated supply for the WM1302 | e.g. TPS563201 / AP62300 class |
 | Bulk + ceramic caps | TX current peaks | e.g. 2× 100 µF + 10 µF + 100 nF at the socket |
 | Schottky diode | 5 V → Pico VSYS | Standard Pico external-supply arrangement |
 | ATECC608B (DNP footprint) | Future: mTLS private key in hardware | Same I2C bus as the WM1302 temp sensor |
-| GPS module (DNP footprint) | Future: Class B / GPS time | e.g. u-blox MAX-M10S or ATGM336H |
-| 5 V input | Barrel jack / screw terminal (later PoE) | USB-C on the Pico for console/flashing |
+| Quectel L76K (DNP footprint) | Future: Class B / GPS time | GPS/BeiDou/GLONASS/QZSS, 3.3 V, UART + 1PPS, U.FL for GNSS antenna |
+| 24 V DC input | Pluggable screw terminal (5.08 mm), later PoE | USB-C on the Pico for console/flashing |
 
 ### 2.2 Block diagram (signals and power)
 
 ```mermaid
 flowchart LR
     subgraph PWR["Power"]
-        VIN["5 V input<br/>(DC jack / later PoE)"]
+        VIN["24 V DC input<br/>(screw terminal)"]
+        PROT["Fuse/PTC + reverse<br/>polarity + TVS"]
+        BUCK24["Buck 24V→5V<br/>≥2 A"]
+        V5["5 V rail<br/>(later PoE 5 V)"]
         BUCK["Buck 5V→3.3V<br/>≥2 A<br/>+ bulk caps"]
         D1["Schottky diode"]
     end
@@ -65,12 +72,13 @@ flowchart LR
     end
 
     ATECC["ATECC608B<br/>(DNP)"]
-    GPS["GPS module<br/>(DNP)"]
+    GPS["Quectel L76K GNSS<br/>(DNP)"]
     ANT["LoRa antenna (U.FL)"]
     NET["LAN → MQTT broker<br/>(ChirpStack)"]
 
-    VIN --> BUCK --> V33
-    VIN --> D1 --> VSYS
+    VIN --> PROT --> BUCK24 --> V5
+    V5 --> BUCK --> V33
+    V5 --> D1 --> VSYS
 
     RP -- "SPI1: SCK GP10 / MOSI GP11 / MISO GP12" --> SX1302
     RP -- "SPI1 MOSI/MISO/SCK (shared)" --> SX1261
@@ -103,12 +111,21 @@ Ground: single common ground between input, buck, Pico and mPCIe socket.
 | GP15 | POWER_EN | Module power enable |
 | GP8 | SX1261_RESET | SX1261 reset |
 | GP4 / GP5 | I2C0 SDA / SCL | Temp sensor, ATECC608B (DNP) |
-| GP0 / GP1 | UART0 TX / RX | GPS (DNP) |
-| GP2 | Optional PPS sense | GPS PPS (DNP) |
+| GP0 / GP1 | UART0 TX / RX | L76K RXD / TXD (DNP) |
+| GP2 | Optional PPS sense | L76K 1PPS (DNP) |
 | GP16–GP21 | — | W5500 (internal, do not use) |
 
 ### 2.4 Power notes
 
+- Input: 24 V DC nominal like an industrial PLC; design for 9–36 V continuous so
+  IEC 61131-2 (19.2–30 V incl. ripple) and 12 V supplies are covered. Buck and all
+  input-side parts rated ≥ 60 V for transients.
+- Input protection: PTC or fuse, reverse-polarity protection (P-FET / ideal diode,
+  avoids the drop of a series diode), TVS after the protection (SMBJ33A class), input
+  bulk cap + π-filter for conducted EMC.
+- Two-stage conversion: 24 V → 5 V (Pico VSYS, later PoE 5 V joins here) and
+  5 V → 3.3 V for the WM1302. Size the 24 V → 5 V stage for the WM1302 TX peak
+  (~1.5 A at 5 V) plus the Pico.
 - Do **not** power the WM1302 from the Pico's 3V3 pin; use the dedicated buck.
 - Place bulk capacitance close to the mPCIe 3.3 V pins for TX peaks.
 - Power sequencing: keep all Pico pins towards the WM1302 as inputs / low until the
@@ -259,8 +276,13 @@ Keep a DNP footprint on the PCB.
   approximate UTC on uplinks (correlate SX1302 counter with RP2350 timer in software).
 - A PIO-generated PPS from NTP gives no benefit (accuracy limited by NTP over
   W5500/SPI, ~0.1–several ms, far from Class B requirements).
-- Optional GPS footprint (PPS → WM1302 GPS_PPS, UART → Pico) for future Class B,
-  GPS-time multicast and time without network. Needs sky view.
+- Optional Quectel L76K footprint (1PPS → WM1302 GPS_PPS, UART → Pico) for future
+  Class B, GPS-time multicast and time without network. Needs sky view.
+- L76K notes: 3.3 V supply from the Pico 3V3 rail (low current), V_BCKP from a
+  supercap or coin cell for hot start, NMEA output at 9600 baud by default,
+  configuration via `$PCAS` commands (not PMTK). Active GNSS antenna needs an
+  external bias (inductor + series resistor) on the RF line. PPS is 3.3 V level and
+  can go directly to GPS_PPS and GP2.
 - Policy to decide: behaviour when time sync fails (refuse TLS vs. skip date check).
 
 ---
@@ -284,7 +306,8 @@ Keep a DNP footprint on the PCB.
 
 ## 8. Roadmap
 
-1. Connector PCB: mPCIe socket, buck, pin map, DNP footprints (GPS, ATECC608B).
+1. Connector PCB: 24 V input stage, mPCIe socket, bucks, pin map, DNP footprints
+   (L76K, ATECC608B).
 2. Bring-up: SPI to SX1302, read chip version and EUI from Rust.
 3. `sx1302_hal` via `cc` + shim; receive uplinks, print to USB console.
 4. Ethernet + SNTP + TLS + MQTT; publish `UplinkFrame`, `ConnState`, `GatewayStats`.
@@ -298,6 +321,10 @@ Keep a DNP footprint on the PCB.
 - Verify WM1302 mPCIe pinout (3V3, SPI, CS for SX1302/SX1261, resets, POWER_EN, I2C,
   PPS) against datasheet.
 - Measure WM1302 3.3 V peak current at max TX power; size buck and caps.
+- Pick the 24 V → 5 V buck and verify input-surge behaviour (TVS clamp vs. buck
+  max input rating).
+- Verify L76K pinout, PPS pulse width/accuracy and active-antenna bias against the
+  Quectel hardware design guide.
 - Confirm `embedded-tls` interop with the broker (TLS 1.3, cipher suites, cert type).
 - Decide protobuf crate (`prost` + alloc vs. `micropb`).
 - Decide OTA mechanism (boot ROM A/B vs. `embassy-boot-rp`).
