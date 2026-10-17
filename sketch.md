@@ -148,10 +148,29 @@ L76K SET (pin 18) floating = GPS + BeiDou; WAKEUP, ANTON and RESERVED pins NC.
   avoids the drop of a series diode), TVS SM8S33A after the protection (33 V
   stand-off, stays off at 32 V; see surge check below), input bulk cap + π-filter
   for conducted EMC.
-- Surge target: EN 61000-6-2 (industrial immunity), DC power port, IEC 61000-4-5
-  ±0.5 kV line-to-line and line-to-earth (1.2/50 µs, 8/20 µs). Levels and the
-  applicability footnotes (cable length, DC distribution network) still to be checked
-  against the standard text.
+- Surge target: EN IEC 61000-6-2:2019 (= IEC 61000-6-2:2016), Table 3 item 3.2,
+  DC power port, IEC 61000-4-5, 1.2/50 (8/20) µs, criterion B: **±0.5 kV
+  line-to-line, ±1 kV line-to-earth**. IEC 61000-4-5 source impedance on power
+  ports: 2 Ω line-to-line (→ 250 A short circuit at 0.5 kV), 12 Ω (10 Ω + 2 Ω)
+  line-to-earth (→ 84 A at 1 kV); ST AN4275 Table 2.
+- Applicability (Table 3 notes, definitions 3.5, 3.6):
+  - Surge only on ports "interfacing with long distance lines": > 30 m inside the
+    building or leaving the building (note b). Not for removable/rechargeable
+    batteries.
+  - DC ports not intended for a "DC distribution network" (site supply for several
+    devices; a link to one local battery is not one) are tested as signal ports
+    (Table 2: ±1 kV line-to-earth only, 42 Ω, also only for long distance lines;
+    no line-to-line test).
+  - With a specified AC–DC adaptor the surge goes on the adaptor's AC input
+    (notes d, f); not our case.
+  - A 24 V cabinet supply feeding several devices counts as a DC distribution
+    network, so the board is designed for the full Table 3 levels; with cables
+    ≤ 30 m inside the building the test would not apply at all.
+- Line-to-earth: the board GND reaches earth through the coax shields (grounded
+  mast) and the Ethernet shield. On a +24 V-to-earth surge the current flows
+  +24 V → TVS → GND → earth, at most 84 A, below the line-to-line case. Keep
+  ≥ 1 kV clearance between the 24 V input and the earth/shield parts, and do not
+  join GND and PE with a capacitor too small for 84 A pulses.
 - Surge check result: line-to-line the generator source impedance is 2 Ω, so the
   TVS sees up to ~250 A (8/20 µs). SMCJ33A: 155 A at 8/20 µs (Littelfuse product
   page), so it **does not pass**. Its 53.3 V clamp is specified at only 28.2 A
@@ -484,9 +503,8 @@ Keep a DNP footprint on the PCB.
 
 - Measure WM1302 3.3 V current at max TX power on the real board (datasheet: 415 mA)
   and confirm bulk capacitance.
-- Check the EN 61000-6-2 DC-port surge levels and footnotes against the standard
-  text; get the SM8S33A clamp voltage at 8/20 µs (must stay below 80 V); take the
-  LMR38020 input/layout values from its datasheet.
+- Get the SM8S33A clamp voltage at 8/20 µs and ~250 A (must stay below 80 V);
+  take the LMR38020 input/layout values from its datasheet.
 - Pick the 0.47 F V_BCKP supercap part (leakage ≤ 2 µA); measure backup current.
 - Measure the TLS handshake time on the RP2350 (P-256 in software); confirm RAM.
 - Report the missing `basicConstraints` check to `embedded-tls`.
