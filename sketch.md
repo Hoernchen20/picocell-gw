@@ -148,6 +148,10 @@ L76K SET (pin 18) floating = GPS + BeiDou; WAKEUP, ANTON and RESERVED pins NC.
   avoids the drop of a series diode), TVS SMCJ33A after the protection (33 V
   stand-off, so it stays off at 32 V; ~53 V clamp, below the buck's 60 V rating),
   input bulk cap + π-filter for conducted EMC.
+- Surge target: EN 61000-6-2 (industrial immunity), DC power port, IEC 61000-4-5
+  ±0.5 kV line-to-line and line-to-earth (1.2/50 µs, 8/20 µs). The SMCJ33A's 1500 W
+  rating is for 10/1000 µs; check its 8/20 µs peak current against the test current
+  and move to SM8S33A if the margin is too small.
 - Three rails from the 5 V bus: 24 V → 5 V (Pico VSYS, later PoE 5 V joins here),
   5 V → 3.3 V buck for the WM1302 and 5 V → 3.3 V LDO for the L76K.
 - Current budget at 5 V: WM1302 max 415 mA at 3.3 V (datasheet, TX 26 dBm) ≈ 0.3 A,
@@ -170,15 +174,38 @@ L76K SET (pin 18) floating = GPS + BeiDou; WAKEUP, ANTON and RESERVED pins NC.
 |---|---|
 | Runtime / HAL | Embassy, `embassy-rp` (RP2350) |
 | Ethernet / IP | `embassy-net-wiznet` (W5500 MACRAW) + `embassy-net` (smoltcp) |
-| TLS | `embedded-tls` (TLS 1.3, CA verification only) |
+| TLS | `embedded-tls` (TLS 1.3 only), features `webpki` + `p256`, no `rsa` |
 | MQTT | no_std client, e.g. `rust-mqtt` |
-| Protobuf | Generated from ChirpStack `api/proto/gw/gw.proto` + `common.proto` (`prost` + alloc, or `micropb`) |
+| Protobuf | `micropb` (no alloc, heapless containers), generated from ChirpStack `api/proto/gw/gw.proto` + `common.proto` |
 | Concentrator | Semtech `sx1302_hal` (C) built via `cc`, with a Rust shim for SPI/I2C/delays. Later optionally ported to Rust |
 | Config storage | `sequential-storage` KV in a flash partition, AES-GCM encrypted |
-| Bootloader / OTA | RP2350 secure boot + A/B (boot ROM partitions/TBYB or `embassy-boot-rp`) |
+| Bootloader / OTA | RP2350 boot ROM: secure boot + partition table A/B + TBYB, no second-stage bootloader |
 
 Reference implementations: ChirpStack Concentratord and ChirpStack MQTT Forwarder
 (both Rust, Linux).
+
+Decisions and reasons:
+
+- **TLS (`embedded-tls`)**: TLS 1.3 only, so the broker must offer TLS 1.3
+  (Mosquitto with OpenSSL ≥ 1.1.1 does). The broker certificate uses an
+  **ECDSA P-256** key: RSA verification needs the `rsa` crate and a global
+  allocator, P-256 does not. Verifier `webpki::CertVerifier` (checks the chain up to
+  one trusted root, hostname via `with_server_name`). Size `CERT_SIZE` for the full
+  chain the broker sends and the record buffer at 16 KB (one record at a time;
+  smaller buffers are not guaranteed to work). RP2350 has a SHA-256 accelerator and
+  TRNG; AES-GCM and P-256 run in software (handshake time to be measured).
+- **Protobuf (`micropb`)**: no allocator in the whole firmware, bounded memory per
+  message. `string` / `bytes` / repeated / `map` fields need explicit capacities in
+  the generator config (e.g. `phy_payload` 256 B, `GatewayStats.metadata` small
+  heapless map). `prost` would need `alloc` only for this; rejected.
+- **OTA (boot ROM A/B)**: secure boot is already planned with the key hash in OTP,
+  so the boot ROM verifies the signature. Two partitions in the partition table,
+  the new image is written to the inactive one and booted as TBYB ("try before you
+  buy"); the firmware calls `explicit_buy` only after a successful broker
+  connection, otherwise the watchdog reboot falls back to the old slot. Address
+  translation maps either slot to the same XIP address, so one binary fits both.
+  `embassy-boot-rp` would add a second bootloader and a second signing scheme on
+  top of the ROM; rejected.
 
 ### 3.2 Tasks
 
@@ -266,10 +293,11 @@ Keep a DNP footprint on the PCB.
 
 ### 5.1 Firmware
 
-- Every image signed (`picotool seal --sign` or embassy-boot signing); signing key
-  kept offline.
-- OTA via A/B slots (~900 KB each in 2 MB flash), confirm only after successful
-  broker connection, otherwise roll back.
+- Every image signed with `picotool seal --sign` (boot ROM, secp256k1 + SHA-256);
+  signing key kept offline.
+- OTA via boot ROM A/B partitions (~900 KB each in 2 MB flash, rest for config),
+  TBYB boot, `explicit_buy` only after successful broker connection, otherwise
+  roll back (see 3.1).
 - Anti-rollback version in OTP; up to four boot keys allow key rotation.
 - USB BOOTSEL/UF2 stays enabled as recovery path (only signed images boot).
 
@@ -310,11 +338,14 @@ Keep a DNP footprint on the PCB.
     ripple < 100 mV, rise < 40 ms; TVS + 10 µF / 100 nF / 33 pF at the pin. Quectel
     advises against a switching supply, so not from the Pico 3V3 rail.
   - V_BCKP must come up at the same time as or before VCC. Without it every start is
-    a cold start (~30 s TTFF instead of 2 s). Use a rechargeable cell or supercap
-    charged from VCC via diode + 1 kΩ, or tie it to VCC if hot start is not needed.
+    a cold start (~30 s TTFF instead of 2 s). Decision: supercap on V_BCKP, charged
+    from the L76K LDO output via diode + 1 kΩ (Quectel reference circuit). No
+    battery to replace; bridges short power cuts. Pick the capacitance after checking
+    the V_BCKP range and backup current in the datasheet; DNP 0 Ω to VCC as fallback.
   - I/O level = VCC (3.3 V), connects directly to the RP2350. UART 9600–115200 baud,
-    no flow control; default rate depends on firmware version. Configuration via
-    `$PCAS` sentences (no PMTK).
+    no flow control; default rate depends on firmware version (Waveshare documents
+    9600). Firmware probes 9600 then 115200 until valid NMEA arrives, then
+    sets the rate with `$PCAS01`. Configuration via `$PCAS` sentences (no PMTK).
   - 1PPS: rising edge, 100 ms pulse, < 30 ns (1σ). Goes to WM1302 pin 19 and GP2.
   - RESET_N active low, ≥ 100 ms, internal pull-up; no external pull-up allowed, so
     drive it open-drain (OC transistor or GPIO switched between low and input).
@@ -358,11 +389,12 @@ Keep a DNP footprint on the PCB.
 
 - Measure WM1302 3.3 V current at max TX power on the real board (datasheet: 415 mA)
   and confirm bulk capacitance.
-- Decide the surge immunity target (IEC 61000-4-5 level for the DC port) and
-  confirm SMCJ33A + PTC are sufficient; check the LMR36015 datasheet for layout and
-  input filter.
-- Check the L76K default UART baud rate on the delivered firmware version.
-- Decide V_BCKP source for the L76K (supercap vs. rechargeable cell vs. tie to VCC).
-- Confirm `embedded-tls` interop with the broker (TLS 1.3, cipher suites, cert type).
-- Decide protobuf crate (`prost` + alloc vs. `micropb`).
-- Decide OTA mechanism (boot ROM A/B vs. `embassy-boot-rp`).
+- Check SMCJ33A 8/20 µs peak current against the EN 61000-6-2 surge test (see 2.4);
+  check the LMR36015 datasheet for layout and input filter.
+- Size the L76K V_BCKP supercap (V_BCKP range, backup current, wanted hold time).
+- Test `embedded-tls` against the real Mosquitto with a P-256 broker certificate and
+  intermediate CA; measure handshake time and RAM.
+- Generate the ChirpStack gw protos with `micropb` and fix capacities
+  (`google.protobuf.Timestamp`/`Duration`, oneofs, `metadata` map).
+- Check embassy-rp / `rp235x` ROM bindings for partition-aware flash writes and
+  `explicit_buy`; define the partition table (2 × ~900 KB + config).
