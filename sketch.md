@@ -3,9 +3,10 @@
 Design sketch for a microcontroller-based LoRaWAN gateway that connects directly to
 ChirpStack over MQTT/TLS with protobuf payloads. Firmware in Rust.
 
-Status: concept. All WM1302 mPCIe pin numbers must be verified against the WM1302
-datasheet; do not copy them from Seeed's Raspberry Pi `reset_lgw.sh` scripts (known
-to be inconsistent).
+Status: concept. WM1302 mPCIe pinout verified against the Seeed WM1302 (SPI) EU868
+datasheet (section 2.5); do not copy pin numbers from Seeed's Raspberry Pi
+`reset_lgw.sh` scripts (known to be inconsistent, and they describe the Pi HAT, not
+the module).
 
 ---
 
@@ -13,10 +14,10 @@ to be inconsistent).
 
 - Class A uplink/downlink, Class C unicast and Class C multicast (scheduling type
   **Delay**). No Class B for now.
-- EU868, single WM1302 SPI module (SX1302 + 2x SX1250 + SX1261).
+- EU868, single WM1302 SPI module (SX1302 + 2x SX1250 + SX1262 for LBT/spectral scan).
 - Ethernet only (W5500), optional PoE later via WIZnet PoE module.
 - Power: 24 V DC like an industrial PLC (IEC 61131-2 range 19.2–30 V), wide-input
-  front end so 12 V supplies also work.
+  front end (9–32 V) so 12 V supplies also work.
 - Direct connection to ChirpStack's MQTT broker, replacing what Concentratord +
   ChirpStack MQTT Forwarder do on a Linux gateway.
 - MQTT authentication: per-gateway username/password, TLS with CA certificate only
@@ -33,13 +34,14 @@ to be inconsistent).
 | W5500-EVB-Pico2 | MCU (RP2350, 520 KB SRAM, 2 MB flash) + Ethernet | GP16–GP21 are used internally for the W5500 |
 | Seeed WM1302 SPI (EU868) | LoRa concentrator, mPCIe 52-pin | SX1302 reset is active HIGH on the SPI version |
 | mPCIe socket + standoff/latch | Holds the WM1302 | 52-pin, 0.8 mm pitch |
-| Wide-input buck 24 V → 5 V, ≥ 2 A | Primary supply (input 9–36 V) | e.g. LMR36520 / TPS54360B class, 60 V rated |
-| Input protection | Reverse polarity, surge, overcurrent | P-FET or ideal-diode controller, TVS (SMBJ33A class), PTC/fuse |
-| 5 V → 3.3 V buck, ≥ 2 A | Dedicated supply for the WM1302 | e.g. TPS563201 / AP62300 class |
+| Wide-input buck 24 V → 5 V, ≥ 1.5 A | Primary supply (input 9–32 V) | e.g. TI LMR36015 (4.2–60 V, 1.5 A) |
+| Input protection | Reverse polarity, surge, overcurrent | P-FET or ideal-diode controller, TVS SMCJ33A (1500 W), PTC/fuse |
+| 5 V → 3.3 V buck, ≥ 1 A, with EN | Dedicated supply for the WM1302, switched by POWER_EN | e.g. TPS563201 / AP62300 class |
+| 5 V → 3.3 V LDO, high PSRR, fast discharge | Supply for the L76K | e.g. AP2112K-3.3 class; Quectel advises against a DC-DC here |
 | Bulk + ceramic caps | TX current peaks | e.g. 2× 100 µF + 10 µF + 100 nF at the socket |
 | Schottky diode | 5 V → Pico VSYS | Standard Pico external-supply arrangement |
 | ATECC608B (DNP footprint) | Future: mTLS private key in hardware | Same I2C bus as the WM1302 temp sensor |
-| Quectel L76K (DNP footprint) | Future: Class B / GPS time | GPS/BeiDou/GLONASS/QZSS, 3.3 V, UART + 1PPS, U.FL for GNSS antenna |
+| Quectel L76K (DNP footprint) | Future: Class B / GPS time | GPS/BeiDou/GLONASS/QZSS, 2.7–3.4 V, ~29 mA, UART + 1PPS, U.FL for GNSS antenna |
 | 24 V DC input | Pluggable screw terminal (5.08 mm), later PoE | USB-C on the Pico for console/flashing |
 
 ### 2.2 Block diagram (signals and power)
@@ -51,7 +53,8 @@ flowchart LR
         PROT["Fuse/PTC + reverse<br/>polarity + TVS"]
         BUCK24["Buck 24V→5V<br/>≥2 A"]
         V5["5 V rail<br/>(later PoE 5 V)"]
-        BUCK["Buck 5V→3.3V<br/>≥2 A<br/>+ bulk caps"]
+        BUCK["Buck 5V→3.3V<br/>≥1 A, EN<br/>+ bulk caps"]
+        LDO["LDO 5V→3.3V<br/>(GNSS)"]
         D1["Schottky diode"]
     end
 
@@ -66,9 +69,9 @@ flowchart LR
     subgraph WM["WM1302 SPI (mPCIe)"]
         V33["3V3 pins"]
         SX1302["SX1302<br/>+ 2× SX1250"]
-        SX1261["SX1261<br/>(LBT / spectral scan)"]
+        SX1262["SX1262<br/>(LBT / spectral scan)"]
         TEMP["Temp sensor (I2C)"]
-        PPS["GPS_PPS"]
+        PPS["1PPS (pin 19)"]
     end
 
     ATECC["ATECC608B<br/>(DNP)"]
@@ -79,17 +82,19 @@ flowchart LR
     VIN --> PROT --> BUCK24 --> V5
     V5 --> BUCK --> V33
     V5 --> D1 --> VSYS
+    V5 --> LDO --> GPS
 
     RP -- "SPI1: SCK GP10 / MOSI GP11 / MISO GP12" --> SX1302
-    RP -- "SPI1 MOSI/MISO/SCK (shared)" --> SX1261
+    RP -- "SPI1 MOSI/MISO/SCK (shared)" --> SX1262
     RP -- "CS GP13" --> SX1302
-    RP -- "CS GP9" --> SX1261
+    RP -- "CS GP9" --> SX1262
     RP -- "SX1302_RESET GP14" --> SX1302
-    RP -- "POWER_EN GP15" --> WM
-    RP -- "SX1261_RESET GP8" --> SX1261
+    RP -- "POWER_EN GP15 (buck EN)" --> BUCK
+    RP -- "SX1262_RESET GP8" --> SX1262
+    SX1262 -- "BUSY GP6 / DIO1 GP7" --> RP
     RP -- "I2C0: SDA GP4 / SCL GP5" --> TEMP
     RP -- "I2C0" --> ATECC
-    GPS -- "PPS" --> PPS
+    GPS -- "1PPS" --> PPS
     GPS -- "UART0: GP0/GP1" --> RP
     SX1302 --- ANT
     RP <--> W5500 --- RJ45 --- NET
@@ -98,39 +103,61 @@ flowchart LR
 
 Ground: single common ground between input, buck, Pico and mPCIe socket.
 
-### 2.3 Proposed pin map (Pico side)
+### 2.3 Pin map
 
-| Pico GPIO | Function | WM1302 / peripheral |
+| Pico GPIO | Function | Peripheral pin |
 |---|---|---|
-| GP10 | SPI1 SCK | SPI_SCK |
-| GP11 | SPI1 TX (MOSI) | SPI_MOSI |
-| GP12 | SPI1 RX (MISO) | SPI_MISO |
-| GP13 | CS SX1302 | SX1302 CSn |
-| GP9 | CS SX1261 (GPIO) | SX1261 CSn |
-| GP14 | SX1302_RESET (active high) | SX1302 reset |
-| GP15 | POWER_EN | Module power enable |
-| GP8 | SX1261_RESET | SX1261 reset |
-| GP4 / GP5 | I2C0 SDA / SCL | Temp sensor, ATECC608B (DNP) |
-| GP0 / GP1 | UART0 TX / RX | L76K RXD / TXD (DNP) |
-| GP2 | Optional PPS sense | L76K 1PPS (DNP) |
+| GP10 | SPI1 SCK | WM1302 pin 45 SPI_SCK |
+| GP11 | SPI1 TX (MOSI) | WM1302 pin 49 SPI_MOSI |
+| GP12 | SPI1 RX (MISO) | WM1302 pin 47 SPI_MISO |
+| GP13 | CS SX1302 | WM1302 pin 51 SX1302_CSN |
+| GP9 | CS SX1262 (GPIO) | WM1302 pin 25 SX1262_CSN |
+| GP14 | SX1302_RESET (active high on SPI version) | WM1302 pin 22 RESET |
+| GP8 | SX1262_RESET | WM1302 pin 10 SX1262_RST |
+| GP6 | SX1262_BUSY (input) | WM1302 pin 8 SX1262_BUSY |
+| GP7 | SX1262_DIO1 (input, IRQ) | WM1302 pin 33 SX1262_IO1 |
+| — | SX1262_DIO2 | WM1302 pin 31, leave NC |
+| GP15 | POWER_EN | EN of the WM1302 3.3 V buck (pull-down, module off at boot) |
+| GP4 / GP5 | I2C0 SDA / SCL | WM1302 pins 32 / 30 (temp sensor), ATECC608B (DNP) |
+| GP0 / GP1 | UART0 TX / RX | L76K pin 3 RXD / pin 2 TXD (DNP) |
+| GP2 | PPS sense (input) | L76K pin 4 1PPS (DNP) |
+| GP3 | L76K reset (open-drain: drive low or hi-Z) | L76K pin 9 RESET_N (DNP) |
 | GP16–GP21 | — | W5500 (internal, do not use) |
+
+WM1302 mPCIe pins (SPI version, from the Seeed datasheet):
+
+| mPCIe pin | WM1302 signal | Connect to |
+|---|---|---|
+| 2, 24, 39, 41, 52 | 3V3 | 3.3 V buck output (all five) |
+| 4, 9, 15, 18, 21, 26, 27, 29, 34, 35, 37, 40, 43, 50 | GND | Ground plane |
+| 19 | 1PPS (input) | L76K 1PPS |
+| 14 / 16 | I2C_SCL / I2C_SDA (temp sensor, second pair) | NC (use 30/32) |
+| 36 / 38 | USB_D− / USB_D+ | NC (USB version only) |
+| others | NC | NC |
+
+The module has **no** power-enable pin; the `SX1302_POWER_EN` in Seeed's scripts
+switches a regulator on the Pi HAT. On this board POWER_EN switches the 3.3 V buck.
+L76K SET (pin 18) floating = GPS + BeiDou; WAKEUP, ANTON and RESERVED pins NC.
 
 ### 2.4 Power notes
 
-- Input: 24 V DC nominal like an industrial PLC; design for 9–36 V continuous so
+- Input: 24 V DC nominal like an industrial PLC; design for 9–32 V continuous so
   IEC 61131-2 (19.2–30 V incl. ripple) and 12 V supplies are covered. Buck and all
   input-side parts rated ≥ 60 V for transients.
 - Input protection: PTC or fuse, reverse-polarity protection (P-FET / ideal diode,
-  avoids the drop of a series diode), TVS after the protection (SMBJ33A class), input
-  bulk cap + π-filter for conducted EMC.
-- Two-stage conversion: 24 V → 5 V (Pico VSYS, later PoE 5 V joins here) and
-  5 V → 3.3 V for the WM1302. Size the 24 V → 5 V stage for the WM1302 TX peak
-  (~1.5 A at 5 V) plus the Pico.
+  avoids the drop of a series diode), TVS SMCJ33A after the protection (33 V
+  stand-off, so it stays off at 32 V; ~53 V clamp, below the buck's 60 V rating),
+  input bulk cap + π-filter for conducted EMC.
+- Three rails from the 5 V bus: 24 V → 5 V (Pico VSYS, later PoE 5 V joins here),
+  5 V → 3.3 V buck for the WM1302 and 5 V → 3.3 V LDO for the L76K.
+- Current budget at 5 V: WM1302 max 415 mA at 3.3 V (datasheet, TX 26 dBm) ≈ 0.3 A,
+  Pico 2 + W5500 ≈ 0.15 A, L76K 29 mA. Total ≈ 0.5 A, so a 1.5 A 24 V → 5 V stage and
+  a ≥ 1 A WM1302 buck leave good margin for start-up and TX transients.
 - Do **not** power the WM1302 from the Pico's 3V3 pin; use the dedicated buck.
 - Place bulk capacitance close to the mPCIe 3.3 V pins for TX peaks.
 - Power sequencing: keep all Pico pins towards the WM1302 as inputs / low until the
-  module's 3.3 V rail is up (avoid back-powering through I/O). Optionally let the Pico
-  drive the buck's EN pin for a hard power-cycle of the module.
+  module's 3.3 V rail is up (avoid back-powering through I/O). POWER_EN (GP15) drives
+  the buck's EN with a pull-down, which also gives a hard power-cycle of the module.
 - Feed the Pico through VSYS with a Schottky diode so USB and external 5 V can coexist.
 
 ---
@@ -278,11 +305,22 @@ Keep a DNP footprint on the PCB.
   W5500/SPI, ~0.1–several ms, far from Class B requirements).
 - Optional Quectel L76K footprint (1PPS → WM1302 GPS_PPS, UART → Pico) for future
   Class B, GPS-time multicast and time without network. Needs sky view.
-- L76K notes: 3.3 V supply from the Pico 3V3 rail (low current), V_BCKP from a
-  supercap or coin cell for hot start, NMEA output at 9600 baud by default,
-  configuration via `$PCAS` commands (not PMTK). Active GNSS antenna needs an
-  external bias (inductor + series resistor) on the RF line. PPS is 3.3 V level and
-  can go directly to GPS_PPS and GP2.
+- L76K notes (Quectel L76K Hardware Design V1.0):
+  - VCC 2.7–3.4 V from its own LDO (high PSRR, fast discharge, supply ≥ 100 mA),
+    ripple < 100 mV, rise < 40 ms; TVS + 10 µF / 100 nF / 33 pF at the pin. Quectel
+    advises against a switching supply, so not from the Pico 3V3 rail.
+  - V_BCKP must come up at the same time as or before VCC. Without it every start is
+    a cold start (~30 s TTFF instead of 2 s). Use a rechargeable cell or supercap
+    charged from VCC via diode + 1 kΩ, or tie it to VCC if hot start is not needed.
+  - I/O level = VCC (3.3 V), connects directly to the RP2350. UART 9600–115200 baud,
+    no flow control; default rate depends on firmware version. Configuration via
+    `$PCAS` sentences (no PMTK).
+  - 1PPS: rising edge, 100 ms pulse, < 30 ns (1σ). Goes to WM1302 pin 19 and GP2.
+  - RESET_N active low, ≥ 100 ms, internal pull-up; no external pull-up allowed, so
+    drive it open-drain (OC transistor or GPIO switched between low and input).
+  - Active antenna: powered from VDD_RF (= VCC) through 68 nH + 0 Ω into RF_IN, DC
+    block 100 pF, ESD diode at the connector, π-match footprint (0 Ω, 2× NM).
+    Antenna total gain < 17 dB, NF < 1.5 dB. Passive antenna only if cable < 1 m.
 - Policy to decide: behaviour when time sync fails (refuse TLS vs. skip date check).
 
 ---
@@ -318,13 +356,13 @@ Keep a DNP footprint on the PCB.
 
 ## 9. Open points
 
-- Verify WM1302 mPCIe pinout (3V3, SPI, CS for SX1302/SX1261, resets, POWER_EN, I2C,
-  PPS) against datasheet.
-- Measure WM1302 3.3 V peak current at max TX power; size buck and caps.
-- Pick the 24 V → 5 V buck and verify input-surge behaviour (TVS clamp vs. buck
-  max input rating).
-- Verify L76K pinout, PPS pulse width/accuracy and active-antenna bias against the
-  Quectel hardware design guide.
+- Measure WM1302 3.3 V current at max TX power on the real board (datasheet: 415 mA)
+  and confirm bulk capacitance.
+- Decide the surge immunity target (IEC 61000-4-5 level for the DC port) and
+  confirm SMCJ33A + PTC are sufficient; check the LMR36015 datasheet for layout and
+  input filter.
+- Check the L76K default UART baud rate on the delivered firmware version.
+- Decide V_BCKP source for the L76K (supercap vs. rechargeable cell vs. tie to VCC).
 - Confirm `embedded-tls` interop with the broker (TLS 1.3, cipher suites, cert type).
 - Decide protobuf crate (`prost` + alloc vs. `micropb`).
 - Decide OTA mechanism (boot ROM A/B vs. `embassy-boot-rp`).
