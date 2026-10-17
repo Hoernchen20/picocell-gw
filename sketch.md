@@ -34,12 +34,12 @@ the module).
 | W5500-EVB-Pico2 | MCU (RP2350, 520 KB SRAM, 2 MB flash) + Ethernet | GP16–GP21 are used internally for the W5500 |
 | Seeed WM1302 SPI (EU868) | LoRa concentrator, mPCIe 52-pin | SX1302 reset is active HIGH on the SPI version |
 | mPCIe socket + standoff/latch | Holds the WM1302 | 52-pin, 0.8 mm pitch |
-| Wide-input buck 24 V → 5 V, ≥ 1.5 A | Primary supply (input 9–32 V) | TI LMR38020 (4.2–80 V, 2 A, HSOIC-8), 80 V for surge margin (see 2.4) |
-| Input protection | Reverse polarity, surge, overcurrent | P-FET or ideal-diode controller, TVS SM8S33A (6600 W, DO-218AB), PTC/fuse |
-| 5 V → 3.3 V buck, ≥ 1 A, with EN | Dedicated supply for the WM1302, switched by POWER_EN | e.g. TPS563201 / AP62300 class |
-| 5 V → 3.3 V LDO, high PSRR, fast discharge | Supply for the L76K | e.g. AP2112K-3.3 class; Quectel advises against a DC-DC here |
-| Bulk + ceramic caps | TX current peaks | e.g. 2× 100 µF + 10 µF + 100 nF at the socket |
-| Schottky diode | 5 V → Pico VSYS | Standard Pico external-supply arrangement |
+| Wide-input buck 24 V → 5 V, ≥ 1.5 A | Primary supply (input 9–32 V) | TI LMR38020SDDAR (4.2–80 V, 85 V abs. max, 2 A, HSOIC-8, PFM + spread spectrum), 80 V for surge margin (see 2.4) |
+| Input protection | Reverse polarity, surge, overcurrent | PTC 60 V + TVS SM8S33A (6600 W, DO-218AB) as crowbar + series Schottky 100 V, π-filter (see 2.4) |
+| 5 V → 3.3 V buck, ≥ 1 A, with EN | Dedicated supply for the WM1302, switched by POWER_EN | TI TPS563201 (3 A, 4.5–17 V, EN with internal pull-down) |
+| 5 V → 3.3 V LDO, high PSRR, fast discharge | Supply for the L76K | TI TLV75533PDBVR (500 mA, active output discharge); Quectel advises against a DC-DC here |
+| Bulk + ceramic caps | TX current peaks | Limited by the TPS563201 (20–68 µF total output capacitance, see 2.4) |
+| Schottky diode | 5 V → Pico VSYS | SS34; standard Pico external-supply arrangement |
 | ATECC608B (DNP footprint) | Future: mTLS private key in hardware | Same I2C bus as the WM1302 temp sensor |
 | Quectel L76K (DNP footprint) | Future: Class B / GPS time | GPS/BeiDou/GLONASS/QZSS, 2.7–3.4 V, ~29 mA, UART + 1PPS, U.FL for GNSS antenna |
 | 24 V DC input | Pluggable screw terminal (5.08 mm), later PoE | USB-C on the Pico for console/flashing |
@@ -50,7 +50,7 @@ the module).
 flowchart LR
     subgraph PWR["Power"]
         VIN["24 V DC input<br/>(screw terminal)"]
-        PROT["Fuse/PTC + reverse<br/>polarity + TVS"]
+        PROT["PTC + TVS (crowbar)<br/>+ Schottky + π-filter"]
         BUCK24["Buck 24V→5V<br/>≥2 A"]
         V5["5 V rail<br/>(later PoE 5 V)"]
         BUCK["Buck 5V→3.3V<br/>≥1 A, EN<br/>+ bulk caps"]
@@ -144,10 +144,24 @@ L76K SET (pin 18) floating = GPS + BeiDou; WAKEUP, ANTON and RESERVED pins NC.
 - Input: 24 V DC nominal like an industrial PLC; design for 9–32 V continuous so
   IEC 61131-2 (19.2–30 V incl. ripple) and 12 V supplies are covered. Buck rated
   80 V, all parts before the buck (FET, PTC, filter, caps) rated ≥ 100 V.
-- Input protection: PTC or fuse, reverse-polarity protection (P-FET / ideal diode,
-  avoids the drop of a series diode), TVS SM8S33A after the protection (33 V
-  stand-off, stays off at 32 V; see surge check below), input bulk cap + π-filter
-  for conducted EMC.
+- Input protection chain: terminal → PTC (60 V, 0.75 A hold) → TVS SM8S33A to GND
+  → series Schottky SS210 (100 V, 2 A) → π-filter → LMR38020.
+  - The TVS sits directly at the input, before any series element. A reverse-polarity
+    blocker in front of a unidirectional TVS (P-FET, diode) would have to block the
+    full negative surge (up to −500 V line-to-line), and a bidirectional TVS with the
+    SM8S current rating does not exist in SMD.
+  - Reverse polarity: the TVS conducts forward (crowbar, ~ −1 V) and the PTC trips;
+    it resets once the wiring is fixed. The Schottky keeps the −1 V away from the
+    buck (VIN abs. min −0.3 V). Negative surges are clamped the same way.
+  - Series Schottky instead of a P-FET / ideal diode: input current is only
+    ~0.12 A at 24 V (0.33 A at 9 V), so the drop costs < 0.1 W; one part instead of
+    FET + zener + resistor.
+  - PTC Imax 100 A covers the short-circuit current of typical 24 V cabinet supplies;
+    hold current 0.75 A at 25 °C, ~0.5 A at 85 °C, above the 0.33 A worst case at 9 V.
+  - π-filter for conducted EMC: 4.7 µF / 100 V ceramic, 4.7 µH, then 2× 22 µF / 100 V
+    electrolytic + 4.7 µF ceramic + 100 nF at the buck. Resonance ≈ 33 kHz, well below
+    f_SW = 400 kHz. The electrolytic on the buck side is **mandatory**, see surge
+    check below.
 - Surge target: EN IEC 61000-6-2:2019 (= IEC 61000-6-2:2016), Table 3 item 3.2,
   DC power port, IEC 61000-4-5, 1.2/50 (8/20) µs, criterion B: **±0.5 kV
   line-to-line, ±1 kV line-to-earth**. IEC 61000-4-5 source impedance on power
@@ -181,25 +195,100 @@ L76K SET (pin 18) floating = GPS + BeiDou; WAKEUP, ANTON and RESERVED pins NC.
 - Decision: SM8S33A + TI LMR38020 (4.2–80 V, 2 A, HSOIC-8) instead of the LMR36015;
   all parts before the buck rated ≥ 100 V. Rejected: keeping the 60 V buck with a
   two-stage protection (primary TVS, series impedance, secondary TVS); more parts.
-- Buck layout and input (from the LMR36015 datasheet; check the values against the
-  LMR38020 datasheet, the principles are the same):
-  ≥ 4.7 µF ceramic X7R rated 2× V_IN max (100 V) plus 220 nF small-case at each of
-  the two VIN/PGND pin pairs; 20–100 µF electrolytic in parallel to damp the cable
-  inductance; VCC 1 µF, CBOOT 100 nF; tight input loop, small SW node, feedback
-  divider at FB away from SW; 4-layer board with a solid inner GND plane. No
-  snap-back (thyristor) TVS on the input (TI: output caps discharge back into it).
-  Design the π-filter to TI AN-2162 so it does not destabilise the buck.
+- SM8S33A clamp at the real surge current (estimate, Vishay gives only 10/1000 µs
+  data): linear model V_C = V_BR + R_d · I with V_BR max 40.6 V and
+  R_d = (53.3 − 36.7) V / 124 A = 0.134 Ω (conservative, from V_BR min). Simulated
+  with the 0.5 kV / 2 Ω generator, IEC 8/20 short-circuit current, then Schottky,
+  4.7 µH, 2 µF effective ceramic (4.7 µF / 100 V at DC bias) and the electrolytic
+  (script: TVS + π-filter ODE, no PTC resistance, no wiring inductance; both
+  would lower the peaks):
+
+  | Case | I_TVS peak | V_TVS peak | V at LMR38020 VIN |
+  |---|---|---|---|
+  | 25 °C, 47 µF / 0.5 Ω electrolytic | 200 A | 67 V | 61 V |
+  | 85 °C (V_BR +6 %), 2× 22 µF / 100 V | 197 A | 69 V | **63 V** |
+  | 85 °C, **no electrolytic** | 213 A | 72 V | **99 V** (LC overshoot) |
+
+  Result: TVS clamp ≤ 72 V, buck input ≤ 63 V with the electrolytic, i.e. 17 V
+  below the 80 V operating and 22 V below the 85 V absolute maximum. Without the
+  damping electrolytic the π-filter rings above 85 V, so it must be fitted on the
+  buck side of the filter inductor and rated 100 V (not 63 V). Peak current through
+  the Schottky and the filter inductor ≈ 46 A for some 10 µs (SS210 I_FSM 50 A at
+  8.3 ms; the inductor saturates briefly, which lowers L and the overshoot).
+  Pulse energy in the TVS ≈ 70 V · 200 A · ~20 µs ≈ 0.3 J, far below its rating.
+- LMR38020 values (datasheet SNVSC40E, Table 9-1 and section 9.2.2), 24 V → 5 V,
+  400 kHz:
+  - f_SW 400 kHz: R_T = 64.9 kΩ (RT/SYNC must not float or be shorted). 2.2 MHz is
+    not possible at 32 V in (t_ON = 71 ns < t_ON-MIN 80–131 ns).
+  - FB: R_FBT 100 kΩ, R_FBB 24.9 kΩ (V_REF 1.0 V → 5.0 V).
+  - L = 15 µH (Eq. 10 with K = 0.4 at 32 V: 13 µH), I_SAT ≥ 3.8 A
+    (I_HS-LIMIT max): FCH0650-150M (5 A).
+  - C_OUT 3× 22 µF / 25 V X5R 1206 (TI: 3× 22 µF nominal, 2× 22 µF minimum).
+  - C_IN: 4.7 µF / 100 V X7R 1210 + 100 nF / 100 V 0603 at the VIN pin (single
+    VIN pin, GND = pin 1 + thermal pad), C_BOOT 100 nF.
+  - EN: UVLO divider R_ENB 100 kΩ, R_ENT 536 kΩ → on at 8.0 V, off at ~7.0 V
+    (V_EN-H 1.25 V, V_EN-L 1.10 V); during a surge EN sees ≤ 11 V (abs. max
+    V_IN + 0.3 V).
+  - PG unused; route to a test point (or GP22 if useful).
+  - Layout: tight C_IN–VIN–GND loop, small SW node, FB divider at FB away from SW,
+    thermal vias under the pad; 4-layer board with a solid inner GND plane. No
+    snap-back (thyristor) TVS on the input (TI: output caps discharge back into it).
+- TPS563201 (5 V → 3.3 V, WM1302), datasheet Table 7-2: R1 33.2 kΩ, R2 10 kΩ,
+  L 2.2 µH, **total output capacitance 20–68 µF** (D-CAP2 stability). So no
+  2× 100 µF bulk at the socket: 2× 22 µF at the buck + 22 µF + 100 nF at the
+  mPCIe 3V3 pins (66 µF nominal, less with DC bias), plus a DNP footprint for a
+  polymer bulk cap to try on the real board. EN has an internal 1.5 MΩ pull-down
+  (module off while GP15 floats at boot); add 100 kΩ external for margin.
+  Input 10 µF + 100 nF.
 - Three rails from the 5 V bus: 24 V → 5 V (Pico VSYS, later PoE 5 V joins here),
   5 V → 3.3 V buck for the WM1302 and 5 V → 3.3 V LDO for the L76K.
 - Current budget at 5 V: WM1302 max 415 mA at 3.3 V (datasheet, TX 26 dBm) ≈ 0.3 A,
   Pico 2 + W5500 ≈ 0.15 A, L76K 29 mA. Total ≈ 0.5 A, so the 2 A 24 V → 5 V stage and
   a ≥ 1 A WM1302 buck leave good margin for start-up and TX transients.
 - Do **not** power the WM1302 from the Pico's 3V3 pin; use the dedicated buck.
-- Place bulk capacitance close to the mPCIe 3.3 V pins for TX peaks.
+- Place the socket decoupling (22 µF + 100 nF) close to the mPCIe 3.3 V pins for TX peaks.
 - Power sequencing: keep all Pico pins towards the WM1302 as inputs / low until the
   module's 3.3 V rail is up (avoid back-powering through I/O). POWER_EN (GP15) drives
   the buck's EN with a pull-down, which also gives a hard power-cycle of the module.
 - Feed the Pico through VSYS with a Schottky diode so USB and external 5 V can coexist.
+
+### 2.5 Parts for JLCPCB assembly
+
+Checked against the JLCPCB parts library on 2026-10-17 (stock changes; re-check
+before ordering). "Basic" parts have no extended-part setup fee. DNP parts are not
+placed, so they need a footprint but no stock.
+
+| Ref / function | Part | LCSC | Lib | Stock | Notes |
+|---|---|---|---|---|---|
+| 24 V input terminal | DEGSON 15EDGVC-5.08-02P-14-00AH | C23107080 | ext | 2.7k | THT header; plug 15EDGK-5.08-02P ordered separately |
+| PTC | TECHFUSE SMD075L-60V (2920) | C2833621 | ext | 4.3k | 0.75 A hold / 1.5 A trip, 60 V, Imax 100 A |
+| TVS | Vishay SM8S33AHE3_A/I (DO-218AB) | C335622 | ext | 4.5k | DOWO C312613 (9k) as second source |
+| Series Schottky | MDD SS210 (SMA) | C14996 | basic | 787k | 100 V 2 A |
+| π-filter inductor | Sunlord SWPA4030S4R7MT | C57269 | ext | 19k | 4.7 µH |
+| 100 V ceramic | FH 1210B475K101NT (4.7 µF X7R 1210) | C2840282 | ext | 31k | 2× (filter in, buck VIN) |
+| 100 V 100 nF | Samsung CL10B104KC8NNNC (0603) | C15725 | ext | 133k | at buck VIN |
+| Damping electrolytic | Panasonic EEEFK2A220P (22 µF 100 V, D8×10.2) | C178570 | ext | 4.1k | 2× in parallel |
+| 24 V → 5 V buck | TI LMR38020SDDAR | C3192337 | ext | 9.3k | |
+| 15 µH inductor | FANGCHENG FCH0650-150M | C20415538 | ext | 8.4k | I_SAT 5 A |
+| 22 µF 25 V 1206 | Samsung CL31A226KAHNNNE | C12891 | basic | 492k | 5 V out (3×), 3.3 V out |
+| 5 V → 3.3 V buck | TI TPS563201DDCR | C116592 | ext | 112k | |
+| 2.2 µH inductor | Sunlord SWPA4030S2R2MT | C36409 | ext | 37k | |
+| VSYS Schottky | MDD SS34 | C8678 | basic | 3.9M | |
+| mPCIe socket | XUNPU PCIE-52P52H (5.2 mm) | C266899 | ext | 12k | SOFNG C444927 as second source |
+| Module standoff | Würth 9774030243R (M2, 3.0 mm SMT) | C22431109 | ext | 725 | height to check against socket drawing |
+| Pico headers | HCTL PM254-1-20-Z-8.5 (1×20 female) | C2897383 | ext | 4.2k | 2×, THT |
+| L76K LDO (DNP) | TI TLV75533PDBVR | C404027 | ext | 117k | active discharge, VIN ≤ 5.5 V |
+| GNSS (DNP) | Quectel L76KB-A58 | C2916234 | ext | 2.2k | |
+| GNSS U.FL (DNP) | BAT WIRELESS BWU.FL-IPEX1 | C5137195 | ext | 595k | |
+| GNSS bias L (DNP) | Murata LQG15HS68NJ02D (68 nH 0402) | C98000 | ext | 15k | |
+| GNSS RF ESD (DNP) | Nexperia PESD5V0F1BL (0.4 pF) | C45961 | ext | 53k | |
+| ATECC608B (DNP) | ATECC608B-SSHDA-T (SOIC-8) | C1518769 | ext | 921 | |
+| V_BCKP supercap (DNP) | not stocked at JLCPCB, see section 6 | — | — | — | THT, hand-soldered |
+
+Resistors and small caps (0402/0603) from the basic library. THT parts (terminal,
+Pico headers, supercap) either via JLCPCB THT assembly or hand-soldered.
+The WM1302 carries its own U.FL for the LoRa antenna; the board needs no LoRa RF
+path.
 
 ---
 
@@ -456,6 +545,12 @@ Keep a DNP footprint on the PCB.
     part's datasheet because it is in the same range as the 8 µA load. Charging
     through 1 kΩ: τ = 470 s, ~25 min to full; initial 3 mA from the LDO is fine.
     Measure the real backup current on the board.
+  - Part: JLCPCB stocks no 0.47 F supercap and no reflow-capable backup cell (MS621FE,
+    ML414 out of stock); most supercaps are not reflow-rated anyway. Since the whole
+    GNSS block is DNP, the supercap is a THT part hand-soldered together with the
+    L76K. Candidate: Eaton PHVL-3R9H474-R (0.47 F, 3.9 V rated, radial, "low
+    leakage" for RTC backup, −40…+65 °C); leakage figure still to be read from the
+    datasheet. Alternative KEMET FGH0V474ZF (3.5 V).
   - I/O level = VCC (3.3 V), connects directly to the RP2350. UART 9600–115200 baud,
     no flow control; default rate depends on firmware version (Waveshare documents
     9600). Firmware probes 9600 then 115200 until valid NMEA arrives, then
@@ -502,10 +597,14 @@ Keep a DNP footprint on the PCB.
 ## 9. Open points
 
 - Measure WM1302 3.3 V current at max TX power on the real board (datasheet: 415 mA)
-  and confirm bulk capacitance.
-- Get the SM8S33A clamp voltage at 8/20 µs and ~250 A (must stay below 80 V);
-  take the LMR38020 input/layout values from its datasheet.
-- Pick the 0.47 F V_BCKP supercap part (leakage ≤ 2 µA); measure backup current.
+  and check the 3.3 V droop with ≤ 68 µF (TPS563201 limit); try the DNP polymer
+  footprint only if needed.
+- Confirm the surge estimate (TVS ≤ 72 V, buck VIN ≤ 63 V) in LTspice with the
+  LMR38020 model and a saturating inductor, later with a surge test.
+- Check the mPCIe standoff height (3.0 mm Würth 9774030243R) against the XUNPU
+  PCIE-52P52H drawing and the WM1302 outline before layout.
+- Read the leakage of the Eaton PHVL-3R9H474-R from its datasheet (≤ 2 µA wanted);
+  measure backup current.
 - Measure the TLS handshake time on the RP2350 (P-256 in software); confirm RAM.
 - Report the missing `basicConstraints` check to `embedded-tls`.
 - Implement the `flash_op`-based read driver for the inactive slot and the config
