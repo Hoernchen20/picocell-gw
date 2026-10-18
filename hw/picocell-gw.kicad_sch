@@ -1,0 +1,226 @@
+(kicad_sch
+	(version 20231120)
+	(generator "eeschema")
+	(generator_version "8.0")
+	(uuid "3260c447-5a79-5ea3-847a-c97e2c900786")
+	(paper "A3")
+	(title_block
+		(title "picocell-gw LoRaWAN gateway")
+		(date "2026-10-18")
+		(rev "0.1")
+		(company "picocell-gw")
+		(comment 1 "Generated start, connections by net labels; tidy up in KiCad")
+	)
+	(lib_symbols)
+	(sheet
+		(at 30.48 50.8)
+		(size 60.96 25.4)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "a10e585f-699c-559a-b413-8871bf3b7820")
+		(property "Sheetname" "Input protection, 24 V to 5 V"
+			(at 30.48 50.0884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "power_in.kicad_sch"
+			(at 30.48 76.7884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+				(hide yes)
+			)
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786"
+					(page "2")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 106.68 50.8)
+		(size 60.96 25.4)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "96558d7a-1e0e-563f-86ce-bfcb7cc03b80")
+		(property "Sheetname" "5V_SYS power mux, 3.3 V for the WM1302"
+			(at 106.68 50.0884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "power_rails.kicad_sch"
+			(at 106.68 76.7884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+				(hide yes)
+			)
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786"
+					(page "3")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 182.88 50.8)
+		(size 60.96 25.4)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "366ca128-4e6e-5771-b665-092915de7b07")
+		(property "Sheetname" "W5500-EVB-Pico2, status LED, buttons"
+			(at 182.88 50.0884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "mcu.kicad_sch"
+			(at 182.88 76.7884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+				(hide yes)
+			)
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786"
+					(page "4")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 259.08 50.8)
+		(size 60.96 25.4)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "a5690d8c-3e84-5e9e-912e-1be5a28bb9fc")
+		(property "Sheetname" "WM1302 mPCIe socket, I2C, PPS buffer, ATECC608B"
+			(at 259.08 50.0884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "lora.kicad_sch"
+			(at 259.08 76.7884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+				(hide yes)
+			)
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786"
+					(page "5")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 335.28 50.8)
+		(size 60.96 25.4)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "75b833d3-07ab-5497-b14a-e40bfce0f2da")
+		(property "Sheetname" "Quectel L76K GNSS (DNP)"
+			(at 335.28 50.0884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "gnss.kicad_sch"
+			(at 335.28 76.7884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+				(hide yes)
+			)
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786"
+					(page "6")
+				)
+			)
+		)
+	)
+	(text "Power: 24 V -> PTC -> TVS -> SS210 -> pi-filter -> LMR38020 (5V_BUCK)\n-> TPS2116 (VIN2 = USB VBUS) -> 5V_SYS -> Pico VSYS, TPS563201 (3V3_WM, EN = GP15), TLV75533 (3V3_GNSS).\nDesign notes and decisions: ../sketch.md. Cross-sheet nets are global labels."
+		(exclude_from_sim no)
+		(at 30.48 101.6 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "f62e4ed0-ca7d-5d01-ab98-50dd76805a42")
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+)

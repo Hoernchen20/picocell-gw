@@ -282,7 +282,10 @@ L76K SET (pin 18) floating = GPS + BeiDou; WAKEUP, ANTON and RESERVED pins NC.
   (0.7 mA while driven high). Harmless on A4.
 - 5V_SYS via power mux: TI TPS2116 in priority mode, VIN1 = LMR38020 output,
   VIN2 = Pico VBUS (pin 40), VOUT = 5V_SYS → Pico VSYS, TPS563201, TLV75533. PR1
-  divider from VIN1 sets the switchover (~4.5 V, values from the datasheet). The
+  divider from VIN1 sets the switchover: V_REF 0.92–1.08 V (datasheet SLVSFG1A),
+  33.2 kΩ / 10 kΩ → 4.32 V nominal, 3.97–4.67 V worst case, below the 5.0 V buck
+  output. MODE tied to VIN1; without 24 V MODE is low and the mux passes the higher
+  input (VBUS). 1 µF at VIN2, 22 µF at VOUT. The
   mux blocks reverse current, so 5V_SYS never feeds the USB host or the buck output,
   and the SS34 to VSYS is dropped; the Pico's internal VBUS → VSYS Schottky in
   parallel is harmless. A plain Schottky from VBUS would not work: VBUS min 4.75 V
@@ -659,7 +662,15 @@ Keep a DNP footprint on the PCB.
 ## 9. Open points
 
 - Look up LCSC numbers and stock for the new parts (3-pin terminal, TPS2116, SN74LVC1G17,
-  LED, buttons); compute the TPS2116 PR1 divider from its datasheet.
+  LED, buttons).
+- Schematic (hw/, KiCad 8) started: all blocks drawn, ERC clean. Footprints still
+  missing: SM8S33A (DO-218AB), FCH0650 15 µH, mPCIe socket PCIE-52P52H + standoff,
+  L76K VCC TVS (part to choose), supercap, V_BCKP diode (low-leakage part to choose).
+  Check the terminal footprint (MSTBVA-compatible) against the DEGSON drawing and the
+  Pico footprint against the W5500-EVB-Pico2 header positions.
+- Check the GNSS active-antenna bias / DC block / π-match against the L76K Hardware
+  Design reference circuit (drawn with the bias on the connector side of a 100 pF
+  DC block).
 - Mechanics before layout: enclosure / board outline (DIN rail?), positions of the
   terminal, RJ45, USB-C, LED light pipe, buttons and the two U.FL → SMA pigtails.
 
