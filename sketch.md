@@ -15,9 +15,10 @@ the module).
 - Class A uplink/downlink, Class C unicast and Class C multicast (scheduling type
   **Delay**). No Class B for now.
 - EU868, single WM1302 SPI module (SX1302 + 2x SX1250 + SX1262 for LBT/spectral scan).
-- Ethernet only (W5500), optional PoE later via WIZnet PoE module.
+- Ethernet only (W5500). No PoE in the first board revision.
 - Power: 24 V DC like an industrial PLC (IEC 61131-2 range 19.2–30 V), wide-input
-  front end (9–32 V) so 12 V supplies also work.
+  front end (9–32 V) so 12 V supplies also work. USB power alone runs the whole board
+  (incl. WM1302) for provisioning on the desk.
 - Direct connection to ChirpStack's MQTT broker, replacing what Concentratord +
   ChirpStack MQTT Forwarder do on a Linux gateway.
 - MQTT authentication: per-gateway username/password, TLS with CA certificate only
@@ -39,32 +40,42 @@ the module).
 | 5 V → 3.3 V buck, ≥ 1 A, with EN | Dedicated supply for the WM1302, switched by POWER_EN | TI TPS563201 (3 A, 4.5–17 V, EN with internal pull-down) |
 | 5 V → 3.3 V LDO, high PSRR, fast discharge | Supply for the L76K | TI TLV75533PDBVR (500 mA, active output discharge); Quectel advises against a DC-DC here |
 | Bulk + ceramic caps | TX current peaks | Limited by the TPS563201 (20–68 µF total output capacitance, see 2.4) |
-| Schottky diode | 5 V → Pico VSYS | SS34; standard Pico external-supply arrangement |
-| ATECC608B (DNP footprint) | Future: mTLS private key in hardware | Same I2C bus as the WM1302 temp sensor |
+| Power mux | 5 V from the 24 V buck (priority) or USB VBUS → 5V_SYS | TI TPS2116 (1.6–5.5 V, 2.5 A, 40 mΩ, reverse blocking, ST flag); replaces the VSYS Schottky (see 2.4) |
+| ATECC608B (DNP footprint) | Future: mTLS private key in hardware | Same I2C bus as the WM1302 temp sensor, powered from the WM1302 3.3 V rail |
 | Quectel L76K (DNP footprint) | Future: Class B / GPS time | GPS/BeiDou/GLONASS/QZSS, 2.7–3.4 V, ~29 mA, UART + 1PPS, U.FL for GNSS antenna |
-| 24 V DC input | Pluggable screw terminal (5.08 mm), later PoE | USB-C on the Pico for console/flashing |
+| PPS buffer (DNP) | L76K 1PPS → WM1302 pin 19 without back-powering | SN74LVC1G17 (Schmitt buffer, I_off), powered from the WM1302 3.3 V rail |
+| Status LED | One LED, states as blink patterns | GPIO-driven, visible from outside (light pipe) |
+| Buttons | Provisioning (GPIO) and reset (Pico RUN) | Tactile switches |
+| 24 V DC input | Pluggable screw terminal (5.08 mm), 3-pin: +24 V, 0 V, FE | USB-C on the Pico for console/flashing/desk power |
 
 ### 2.2 Block diagram (signals and power)
 
 ```mermaid
 flowchart LR
     subgraph PWR["Power"]
-        VIN["24 V DC input<br/>(screw terminal)"]
+        VIN["24 V DC input<br/>(3-pin terminal, FE)"]
         PROT["PTC + TVS (crowbar)<br/>+ Schottky + π-filter"]
         BUCK24["Buck 24V→5V<br/>≥2 A"]
-        V5["5 V rail<br/>(later PoE 5 V)"]
+        MUX["Power mux TPS2116<br/>VIN1 priority"]
+        V5["5V_SYS rail"]
         BUCK["Buck 5V→3.3V<br/>≥1 A, EN<br/>+ bulk caps"]
         LDO["LDO 5V→3.3V<br/>(GNSS)"]
-        D1["Schottky diode"]
     end
 
     subgraph PICO["W5500-EVB-Pico2"]
         VSYS["VSYS"]
+        VBUS["VBUS"]
+        RUN["RUN"]
         RP["RP2350"]
         W5500["W5500<br/>(GP16–21 internal)"]
         USB["USB-C<br/>console / UF2"]
         RJ45["RJ45"]
     end
+
+    PPSBUF["PPS buffer<br/>(DNP, WM1302 rail)"]
+    LED["Status LED"]
+    BTN["Provisioning button"]
+    RST["Reset button"]
 
     subgraph WM["WM1302 SPI (mPCIe)"]
         V33["3V3 pins"]
@@ -79,9 +90,11 @@ flowchart LR
     ANT["LoRa antenna (U.FL)"]
     NET["LAN → MQTT broker<br/>(ChirpStack)"]
 
-    VIN --> PROT --> BUCK24 --> V5
+    VIN --> PROT --> BUCK24 -- "VIN1" --> MUX --> V5
+    USB --> VBUS -- "VIN2" --> MUX
+    MUX -- "ST" --> RP
     V5 --> BUCK --> V33
-    V5 --> D1 --> VSYS
+    V5 --> VSYS
     V5 --> LDO --> GPS
 
     RP -- "SPI1: SCK GP10 / MOSI GP11 / MISO GP12" --> SX1302
@@ -94,14 +107,19 @@ flowchart LR
     SX1262 -- "BUSY GP6 / DIO1 GP7" --> RP
     RP -- "I2C0: SDA GP4 / SCL GP5" --> TEMP
     RP -- "I2C0" --> ATECC
-    GPS -- "1PPS" --> PPS
+    GPS -- "1PPS" --> PPSBUF --> PPS
+    GPS -- "1PPS (GP2)" --> RP
     GPS -- "UART0: GP0/GP1" --> RP
+    RP -- "GP28" --> LED
+    BTN -- "GP22" --> RP
+    RST --> RUN
     SX1302 --- ANT
     RP <--> W5500 --- RJ45 --- NET
     RP --- USB
 ```
 
-Ground: single common ground between input, buck, Pico and mPCIe socket.
+Ground: single common ground between input, buck, Pico and mPCIe socket, tied to the
+FE terminal (see 2.4).
 
 ### 2.3 Pin map
 
@@ -112,17 +130,26 @@ Ground: single common ground between input, buck, Pico and mPCIe socket.
 | GP12 | SPI1 RX (MISO) | WM1302 pin 47 SPI_MISO |
 | GP13 | CS SX1302 | WM1302 pin 51 SX1302_CSN |
 | GP9 | CS SX1262 (GPIO) | WM1302 pin 25 SX1262_CSN |
-| GP14 | SX1302_RESET (active high on SPI version) | WM1302 pin 22 RESET |
+| GP14 | SX1302_RESET (active high on SPI version), external pull-down | WM1302 pin 22 RESET |
 | GP8 | SX1262_RESET | WM1302 pin 10 SX1262_RST |
 | GP6 | SX1262_BUSY (input) | WM1302 pin 8 SX1262_BUSY |
 | GP7 | SX1262_DIO1 (input, IRQ) | WM1302 pin 33 SX1262_IO1 |
 | — | SX1262_DIO2 | WM1302 pin 31, leave NC |
-| GP15 | POWER_EN | EN of the WM1302 3.3 V buck (pull-down, module off at boot) |
-| GP4 / GP5 | I2C0 SDA / SCL | WM1302 pins 32 / 30 (temp sensor), ATECC608B (DNP) |
+| GP15 | POWER_EN | EN of the WM1302 3.3 V buck (external pull-down, module off at boot) |
+| GP4 / GP5 | I2C0 SDA / SCL | WM1302 pins 32 / 30 (temp sensor), ATECC608B (DNP); 4.7 kΩ pull-ups to the WM1302 3.3 V rail |
 | GP0 / GP1 | UART0 TX / RX | L76K pin 3 RXD / pin 2 TXD (DNP) |
-| GP2 | PPS sense (input) | L76K pin 4 1PPS (DNP) |
+| GP2 | PPS sense (input) | L76K pin 4 1PPS (DNP), taken before the PPS buffer |
 | GP3 | L76K reset (open-drain: drive low or hi-Z) | L76K pin 9 RESET_N (DNP) |
+| GP22 | Provisioning button (input, active low) | Switch to GND, 10 kΩ pull-up to 3V3, 100 nF |
+| GP26 | — | Free (ADC0) |
+| GP27 | Power source (input) | TPS2116 ST (open-drain, low = running on USB VBUS), 10 kΩ pull-up to 3V3 |
+| GP28 | Status LED (output, active high) | LED + series resistor to GND |
+| RUN | Reset button | Switch to GND (RUN has a pull-up on the Pico) |
 | GP16–GP21 | — | W5500 (internal, do not use) |
+
+SPI lines from the Pico (SCK, MOSI, both CS) get 33 Ω series resistors at the Pico
+side (edge damping, limits back-feed into the unpowered module). Pressing reset also
+power-cycles the WM1302: GP15 goes hi-Z and the pull-down switches the buck off.
 
 WM1302 mPCIe pins (SPI version, from the Seeed datasheet):
 
@@ -130,7 +157,7 @@ WM1302 mPCIe pins (SPI version, from the Seeed datasheet):
 |---|---|---|
 | 2, 24, 39, 41, 52 | 3V3 | 3.3 V buck output (all five) |
 | 4, 9, 15, 18, 21, 26, 27, 29, 34, 35, 37, 40, 43, 50 | GND | Ground plane |
-| 19 | 1PPS (input) | L76K 1PPS |
+| 19 | 1PPS (input) | L76K 1PPS through the DNP PPS buffer; 100 kΩ pull-down (fitted) so the pin does not float without GNSS |
 | 14 / 16 | I2C_SCL / I2C_SDA (temp sensor, second pair) | NC (use 30/32) |
 | 36 / 38 | USB_D− / USB_D+ | NC (USB version only) |
 | others | NC | NC |
@@ -181,10 +208,17 @@ L76K SET (pin 18) floating = GPS + BeiDou; WAKEUP, ANTON and RESERVED pins NC.
     network, so the board is designed for the full Table 3 levels; with cables
     ≤ 30 m inside the building the test would not apply at all.
 - Line-to-earth: the board GND reaches earth through the coax shields (grounded
-  mast) and the Ethernet shield. On a +24 V-to-earth surge the current flows
-  +24 V → TVS → GND → earth, at most 84 A, below the line-to-line case. Keep
-  ≥ 1 kV clearance between the 24 V input and the earth/shield parts, and do not
-  join GND and PE with a capacitor too small for 84 A pulses.
+  mast), the Ethernet shield and the FE terminal. On a +24 V-to-earth surge the
+  current flows +24 V → TVS → GND → FE, at most 84 A, below the line-to-line case.
+- Earth terminal: 3-pin input terminal +24 V / 0 V / FE. FE is a functional earth,
+  not a protective earth (24 V SELV/PELV device, no protective function), so label
+  it FE. GND is tied **directly** to FE with wide copper, no capacitor: a GND–FE
+  capacitor (e.g. 4.7 nF) cannot carry the 84 A line-to-earth surge. Many cabinets
+  earth the 24 V supply's 0 V anyway, so the direct link adds no new ground loop.
+  - Miswiring +24 V onto FE shorts the supply across the board's 0 V–FE copper,
+    bypassing the PTC. Put the pins in the order +24 V, 0 V, FE, use a coded plug,
+    and size the 0 V–FE copper for the supply's short-circuit current until its
+    current limit or fuse acts.
 - Surge check result: line-to-line the generator source impedance is 2 Ω, so the
   TVS sees up to ~250 A (8/20 µs). SMCJ33A: 155 A at 8/20 µs (Littelfuse product
   page), so it **does not pass**. Its 53.3 V clamp is specified at only 28.2 A
@@ -229,7 +263,8 @@ L76K SET (pin 18) floating = GPS + BeiDou; WAKEUP, ANTON and RESERVED pins NC.
   - EN: UVLO divider R_ENB 100 kΩ, R_ENT 536 kΩ → on at 8.0 V, off at ~7.0 V
     (V_EN-H 1.25 V, V_EN-L 1.10 V); during a surge EN sees ≤ 11 V (abs. max
     V_IN + 0.3 V).
-  - PG unused; route to a test point (or GP22 if useful).
+  - PG unused; route to a test point (the TPS2116 ST on GP27 already tells whether
+    the 24 V path is up).
   - Layout: tight C_IN–VIN–GND loop, small SW node, FB divider at FB away from SW,
     thermal vias under the pad; 4-layer board with a solid inner GND plane. No
     snap-back (thyristor) TVS on the input (TI: output caps discharge back into it).
@@ -238,10 +273,33 @@ L76K SET (pin 18) floating = GPS + BeiDou; WAKEUP, ANTON and RESERVED pins NC.
   2× 100 µF bulk at the socket: 2× 22 µF at the buck + 22 µF + 100 nF at the
   mPCIe 3V3 pins (66 µF nominal, less with DC bias), plus a DNP footprint for a
   polymer bulk cap to try on the real board. EN has an internal 1.5 MΩ pull-down
-  (module off while GP15 floats at boot); add 100 kΩ external for margin.
+  (module off while GP15 floats at boot); add 4.7 kΩ external (see RP2350-E9 below).
   Input 10 µF + 100 nF.
-- Three rails from the 5 V bus: 24 V → 5 V (Pico VSYS, later PoE 5 V joins here),
-  5 V → 3.3 V buck for the WM1302 and 5 V → 3.3 V LDO for the L76K.
+- RP2350-E9: on A2 silicon a Bank 0 GPIO with the input buffer enabled leaks and can
+  float to ~2 V against a weak pull-down; the erratum asks for external pull-downs
+  ≤ 8.2 kΩ. The A4 stepping fixes it, but the stepping on the W5500-EVB-Pico2 is not
+  guaranteed, so POWER_EN (GP15) and SX1302_RESET (GP14) get 4.7 kΩ to GND
+  (0.7 mA while driven high). Harmless on A4.
+- 5V_SYS via power mux: TI TPS2116 in priority mode, VIN1 = LMR38020 output,
+  VIN2 = Pico VBUS (pin 40), VOUT = 5V_SYS → Pico VSYS, TPS563201, TLV75533. PR1
+  divider from VIN1 sets the switchover (~4.5 V, values from the datasheet). The
+  mux blocks reverse current, so 5V_SYS never feeds the USB host or the buck output,
+  and the SS34 to VSYS is dropped; the Pico's internal VBUS → VSYS Schottky in
+  parallel is harmless. A plain Schottky from VBUS would not work: VBUS min 4.75 V
+  minus ~0.35 V is below the TPS563201's 4.5 V minimum input. ST (open-drain, low
+  when VIN2 is used) → GP27, so firmware knows it runs on USB.
+- USB budget: WM1302 max ~0.3 A at 5 V (TX 26 dBm) + Pico/W5500 ~0.15 A ≈ 0.45 A,
+  just inside 500 mA. On USB power the firmware limits TX power (or does not
+  transmit); provisioning and RX work normally.
+- Rails from 5V_SYS: Pico VSYS, 5 V → 3.3 V buck for the WM1302 and 5 V → 3.3 V
+  LDO for the L76K.
+- Power domains and back-powering: the Pico 3V3 and the L76K LDO are always on,
+  the WM1302 rail is switched. Everything that connects to the module is either
+  driven by the Pico (kept low/input while the rail is off, 33 Ω series on SPI) or
+  sits in the WM1302 domain: I2C pull-ups and the ATECC608B on the WM1302 rail (the
+  ATECC is only usable while the module is on, fine since it is only off for a
+  power-cycle), 1PPS through a DNP SN74LVC1G17 powered from the WM1302 rail (I_off:
+  input and output high-Z while unpowered). Fit the buffer together with the L76K.
 - Current budget at 5 V: WM1302 max 415 mA at 3.3 V (datasheet, TX 26 dBm) ≈ 0.3 A,
   Pico 2 + W5500 ≈ 0.15 A, L76K 29 mA. Total ≈ 0.5 A, so the 2 A 24 V → 5 V stage and
   a ≥ 1 A WM1302 buck leave good margin for start-up and TX transients.
@@ -250,7 +308,8 @@ L76K SET (pin 18) floating = GPS + BeiDou; WAKEUP, ANTON and RESERVED pins NC.
 - Power sequencing: keep all Pico pins towards the WM1302 as inputs / low until the
   module's 3.3 V rail is up (avoid back-powering through I/O). POWER_EN (GP15) drives
   the buck's EN with a pull-down, which also gives a hard power-cycle of the module.
-- Feed the Pico through VSYS with a Schottky diode so USB and external 5 V can coexist.
+- Status LED on GP28 shows states as blink patterns (e.g. booting, no Ethernet, no
+  broker, online, provisioning mode, error).
 
 ### 2.5 Parts for JLCPCB assembly
 
@@ -260,7 +319,7 @@ placed, so they need a footprint but no stock.
 
 | Ref / function | Part | LCSC | Lib | Stock | Notes |
 |---|---|---|---|---|---|
-| 24 V input terminal | DEGSON 15EDGVC-5.08-02P-14-00AH | C23107080 | ext | 2.7k | THT header; plug 15EDGK-5.08-02P ordered separately |
+| 24 V input terminal | DEGSON 15EDGVC-5.08-03P-14-00AH (3-pin) | to check | ext | — | THT header, +24 V / 0 V / FE; plug 15EDGK-5.08-03P ordered separately (2-pin version was C23107080) |
 | PTC | TECHFUSE SMD075L-60V (2920) | C2833621 | ext | 4.3k | 0.75 A hold / 1.5 A trip, 60 V, Imax 100 A |
 | TVS | Vishay SM8S33AHE3_A/I (DO-218AB) | C335622 | ext | 4.5k | DOWO C312613 (9k) as second source |
 | Series Schottky | MDD SS210 (SMA) | C14996 | basic | 787k | 100 V 2 A |
@@ -273,7 +332,10 @@ placed, so they need a footprint but no stock.
 | 22 µF 25 V 1206 | Samsung CL31A226KAHNNNE | C12891 | basic | 492k | 5 V out (3×), 3.3 V out |
 | 5 V → 3.3 V buck | TI TPS563201DDCR | C116592 | ext | 112k | |
 | 2.2 µH inductor | Sunlord SWPA4030S2R2MT | C36409 | ext | 37k | |
-| VSYS Schottky | MDD SS34 | C8678 | basic | 3.9M | |
+| Power mux | TI TPS2116DRLR (SOT-583) | to check | ext | — | VIN1 buck 5 V, VIN2 VBUS; replaces the SS34 |
+| PPS buffer (DNP) | TI SN74LVC1G17DBVR (SOT-23-5) | to check | — | — | I_off, powered from the WM1302 rail |
+| Status LED | 0603 LED, basic library | to check | basic | — | |
+| Buttons | SMD tactile switch, basic library | to check | basic | — | 2× (provisioning, reset) |
 | mPCIe socket | XUNPU PCIE-52P52H (5.2 mm) | C266899 | ext | 12k | SOFNG C444927 as second source |
 | Module standoff | Würth 9774030243R (M2, 3.0 mm SMT) | C22431109 | ext | 725 | height to check against socket drawing |
 | Pico headers | HCTL PM254-1-20-Z-8.5 (1×20 female) | C2897383 | ext | 4.2k | 2×, THT |
@@ -584,8 +646,8 @@ Keep a DNP footprint on the PCB.
 
 ## 8. Roadmap
 
-1. Connector PCB: 24 V input stage, mPCIe socket, bucks, pin map, DNP footprints
-   (L76K, ATECC608B).
+1. Connector PCB: 24 V input stage, USB power mux, mPCIe socket, bucks, pin map,
+   LED and buttons, DNP footprints (L76K, PPS buffer, ATECC608B).
 2. Bring-up: SPI to SX1302, read chip version and EUI from Rust.
 3. `sx1302_hal` via `cc` + shim; receive uplinks, print to USB console.
 4. Ethernet + SNTP + TLS + MQTT; publish `UplinkFrame`, `ConnState`, `GatewayStats`.
@@ -595,6 +657,11 @@ Keep a DNP footprint on the PCB.
 8. Secure boot, OTP key, signed A/B OTA, CA rotation.
 
 ## 9. Open points
+
+- Look up LCSC numbers and stock for the new parts (3-pin terminal, TPS2116, SN74LVC1G17,
+  LED, buttons); compute the TPS2116 PR1 divider from its datasheet.
+- Mechanics before layout: enclosure / board outline (DIN rail?), positions of the
+  terminal, RJ45, USB-C, LED light pipe, buttons and the two U.FL → SMA pigtails.
 
 - Measure WM1302 3.3 V current at max TX power on the real board (datasheet: 415 mA)
   and check the 3.3 V droop with ≤ 68 µF (TPS563201 limit); try the DNP polymer
