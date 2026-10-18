@@ -9,7 +9,6 @@
 		(date "2026-10-18")
 		(rev "0.1")
 		(company "picocell-gw")
-		(comment 1 "Generated start, connections by net labels; tidy up in KiCad")
 	)
 	(lib_symbols)
 	(sheet

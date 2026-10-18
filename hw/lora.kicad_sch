@@ -9,7 +9,6 @@
 		(date "2026-10-18")
 		(rev "0.1")
 		(company "picocell-gw")
-		(comment 1 "Generated start, connections by net labels; tidy up in KiCad")
 	)
 	(lib_symbols
 		(symbol "picocell:WM1302_SPI"
@@ -1016,109 +1015,6 @@
 				)
 			)
 		)
-		(symbol "power:GND"
-			(power)
-			(pin_numbers hide)
-			(pin_names
-				(offset 0)
-				hide
-			)
-			(exclude_from_sim no)
-			(in_bom yes)
-			(on_board yes)
-			(property "Reference" "#PWR"
-				(at 0 -6.35 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Value" "GND"
-				(at 0 -3.81 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-				)
-			)
-			(property "Footprint" ""
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Datasheet" ""
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(property "ki_keywords" "global power"
-				(at 0 0 0)
-				(effects
-					(font
-						(size 1.27 1.27)
-					)
-					(hide yes)
-				)
-			)
-			(symbol "GND_0_1"
-				(polyline
-					(pts
-						(xy 0 0)
-						(xy 0 -1.27)
-						(xy 1.27 -1.27)
-						(xy 0 -2.54)
-						(xy -1.27 -1.27)
-						(xy 0 -1.27)
-					)
-					(stroke
-						(width 0)
-						(type default)
-					)
-					(fill
-						(type none)
-					)
-				)
-			)
-			(symbol "GND_1_1"
-				(pin power_in line
-					(at 0 0 270)
-					(length 0)
-					(name "~"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-					(number "1"
-						(effects
-							(font
-								(size 1.27 1.27)
-							)
-						)
-					)
-				)
-			)
-		)
 		(symbol "Device:C"
 			(pin_numbers hide)
 			(pin_names
@@ -1976,10 +1872,113 @@
 				)
 			)
 		)
+		(symbol "power:GND"
+			(power)
+			(pin_numbers hide)
+			(pin_names
+				(offset 0)
+				hide
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "#PWR"
+				(at 0 -6.35 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Value" "GND"
+				(at 0 -3.81 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "ki_keywords" "global power"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(symbol "GND_0_1"
+				(polyline
+					(pts
+						(xy 0 0)
+						(xy 0 -1.27)
+						(xy 1.27 -1.27)
+						(xy 0 -2.54)
+						(xy -1.27 -1.27)
+						(xy 0 -1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "GND_1_1"
+				(pin power_in line
+					(at 0 0 270)
+					(length 0)
+					(name "~"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+		)
 	)
 	(symbol
 		(lib_id "picocell:WM1302_SPI")
-		(at 154.94 109.22 0)
+		(at 215.9 139.7 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -1987,25 +1986,25 @@
 		(dnp no)
 		(uuid "1e02cd58-7ad2-5440-8e77-3313d3ab8c5f")
 		(property "Reference" "J2"
-			(at 134.62 78.105 0)
+			(at 196.85 113.03 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left bottom)
+				(justify left)
 			)
 		)
 		(property "Value" "WM1302_SPI_EU868"
-			(at 134.62 80.645 0)
+			(at 205.74 177.8 0)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left bottom)
+				(justify left)
 			)
 		)
 		(property "Footprint" ""
-			(at 154.94 144.78 0)
+			(at 215.9 175.26 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2014,7 +2013,7 @@
 			)
 		)
 		(property "Datasheet" "https://files.seeedstudio.com/products/114992549/WM1302_LoRaWAN_Gateway_Module_Datasheet_V1.0.pdf"
-			(at 154.94 147.32 0)
+			(at 215.9 177.8 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2023,7 +2022,7 @@
 			)
 		)
 		(property "Description" "Seeed WM1302 LoRaWAN concentrator, SPI version, in a 52-pin mPCIe socket (pinout per Seeed datasheet 2.5)"
-			(at 154.94 149.86 0)
+			(at 215.9 180.34 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2032,7 +2031,7 @@
 			)
 		)
 		(property "MPN" "socket XUNPU PCIE-52P52H (C266899)"
-			(at 154.94 109.22 0)
+			(at 215.9 139.7 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -2205,1302 +2204,9 @@
 			)
 		)
 	)
-	(global_label "SPI_SCK"
-		(shape passive)
-		(at 132.08 88.9 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "8c47fc41-cde4-5957-badd-aea0689106c1")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 132.08 88.9 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "SPI_MOSI"
-		(shape passive)
-		(at 132.08 91.44 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "cb2f9819-9ba4-5ec0-80e3-d455e89e9d1f")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 132.08 91.44 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "SPI_MISO"
-		(shape passive)
-		(at 132.08 93.98 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "e2cd9159-b299-5627-b062-633b7896afe5")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 132.08 93.98 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "SX1302_CS"
-		(shape passive)
-		(at 132.08 96.52 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "b2e3aaf5-fb6c-56b8-9579-2fbebb16620c")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 132.08 96.52 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "SX1302_RESET"
-		(shape passive)
-		(at 132.08 99.06 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "38b958c7-1bf2-5672-baf6-04b0cc7cc194")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 132.08 99.06 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "SX1262_CS"
-		(shape passive)
-		(at 132.08 101.6 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "170995fb-6979-541f-aaa0-69b85a52d893")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 132.08 101.6 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "SX1262_RESET"
-		(shape passive)
-		(at 132.08 104.14 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "61f40d57-e518-5bd4-ac51-92131dc9d2c9")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 132.08 104.14 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "SX1262_BUSY"
-		(shape passive)
-		(at 132.08 106.68 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "09f7e6ff-2c0c-5539-9ef8-98cfd00ded24")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 132.08 106.68 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "SX1262_DIO1"
-		(shape passive)
-		(at 132.08 109.22 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "13223652-e12d-50d9-b27e-4b5aabc797ad")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 132.08 109.22 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(no_connect
-		(at 132.08 111.76)
-		(uuid "5f59f274-a8f7-5948-b651-66d2c8d58873")
-	)
-	(global_label "I2C_SDA"
-		(shape passive)
-		(at 132.08 114.3 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "70eb2180-c161-5b06-bd27-95983cce71e9")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 132.08 114.3 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "I2C_SCL"
-		(shape passive)
-		(at 132.08 116.84 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "a1d14bf4-fae3-579b-ba12-681896621cad")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 132.08 116.84 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(no_connect
-		(at 132.08 119.38)
-		(uuid "523242ef-1a9f-5e23-b63e-f11901d6411a")
-	)
-	(no_connect
-		(at 132.08 121.92)
-		(uuid "9b8c2b41-940f-550a-a925-4cb8cc3b499d")
-	)
-	(label "WM_PPS"
-		(at 132.08 124.46 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "bbfabbbc-e68f-522a-b90c-7d6eb2c4496c")
-	)
-	(no_connect
-		(at 132.08 127)
-		(uuid "0ad25b52-b17c-5401-8c3f-66657e603442")
-	)
-	(no_connect
-		(at 132.08 129.54)
-		(uuid "431c5c47-f5c0-570c-a3c6-224457afd820")
-	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 149.86 78.74 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "608d72dc-84d8-5ed2-bb8f-ec410387aa7d")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 149.86 78.74 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 152.4 78.74 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "2c87adfa-70a2-5481-8ce6-9a044af1fd3c")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 152.4 78.74 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 154.94 78.74 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "ca6e5e46-c57b-5e9f-b0cb-928cb4de7645")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 154.94 78.74 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 157.48 78.74 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "2d74d058-19b5-56d5-8c45-ab1985f8ac7e")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 157.48 78.74 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 160.02 78.74 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "bca77d22-c950-5242-9846-1ae445ce64fe")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 160.02 78.74 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 138.43 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "284a3756-ae57-5444-adb4-1be94cd5f84c")
-		(property "Reference" "#PWR05001"
-			(at 138.43 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 138.43 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 138.43 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 138.43 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 138.43 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "2a3b663b-8aa7-557e-a964-237db30d6ac5")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05001")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 140.97 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "a3b808ee-97a5-5a68-af2f-d7ede1ed52d3")
-		(property "Reference" "#PWR05002"
-			(at 140.97 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 140.97 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 140.97 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 140.97 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 140.97 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "49cdf7ee-84c9-53a9-9275-1d910108549f")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05002")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 143.51 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "92a946cb-0002-5e53-8415-30441716ac55")
-		(property "Reference" "#PWR05003"
-			(at 143.51 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 143.51 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 143.51 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 143.51 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 143.51 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "b6f6c1d6-b1d4-59f8-bf96-a08bb05d739b")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05003")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 146.05 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "bd0a8064-3223-5209-a18e-0db0616bd0ba")
-		(property "Reference" "#PWR05004"
-			(at 146.05 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 146.05 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 146.05 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 146.05 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 146.05 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "e0aae8e4-ae1a-5767-b990-4e331ab9c683")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05004")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 148.59 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "fa3fd4ed-5858-5eea-8244-50d68674d64d")
-		(property "Reference" "#PWR05005"
-			(at 148.59 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 148.59 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 148.59 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 148.59 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 148.59 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "907f4c71-caa4-595b-92ea-40a720154af1")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05005")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 151.13 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "5a89935e-1727-5948-a1dd-a8b2e6116292")
-		(property "Reference" "#PWR05006"
-			(at 151.13 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 151.13 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 151.13 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 151.13 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 151.13 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "3c74fe86-b9b8-5037-9494-8b5b265244c6")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05006")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 153.67 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "769f95d5-6a45-5586-808c-65888c6a1e10")
-		(property "Reference" "#PWR05007"
-			(at 153.67 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 153.67 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 153.67 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 153.67 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 153.67 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "2d2272b8-a1d4-5fba-92b2-e0d35bc9b81b")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05007")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 156.21 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "c7dc332b-07e8-50f7-8cba-402e6de73db5")
-		(property "Reference" "#PWR05008"
-			(at 156.21 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 156.21 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 156.21 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 156.21 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 156.21 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "ede57375-de40-538c-8df9-c5c36721c2fc")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05008")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 158.75 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "9c4afe53-96a1-593d-9eef-19e98ead3330")
-		(property "Reference" "#PWR05009"
-			(at 158.75 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 158.75 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 158.75 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 158.75 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 158.75 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "195f0349-6b89-5e16-89a3-21c4bfc86cf7")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05009")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 161.29 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "255c2f3d-065d-51c5-9593-8ab1e7e6e191")
-		(property "Reference" "#PWR05010"
-			(at 161.29 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 161.29 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 161.29 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 161.29 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 161.29 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "ad5a8ea6-51ee-553c-979e-346f00814ad5")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05010")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 163.83 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "be15926e-fd8a-5a33-b3f7-40e34b86aacc")
-		(property "Reference" "#PWR05011"
-			(at 163.83 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 163.83 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 163.83 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 163.83 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 163.83 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "75b13243-1d66-5d5e-a573-69cba74ee4dd")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05011")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 166.37 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "ad7d81d0-891a-51b2-80fe-f73d4c738e13")
-		(property "Reference" "#PWR05012"
-			(at 166.37 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 166.37 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 166.37 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 166.37 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 166.37 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "14523796-764f-518c-957b-dde422d81a01")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05012")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 168.91 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "2f8fa0f6-8a1b-58b6-a39d-00a9fa926fcf")
-		(property "Reference" "#PWR05013"
-			(at 168.91 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 168.91 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 168.91 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 168.91 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 168.91 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "c032f51c-ecad-52f4-9140-4c0c2c61641e")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05013")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 171.45 139.7 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "6b0ab1d4-dac2-56c6-b8cc-71d364ff3b45")
-		(property "Reference" "#PWR05014"
-			(at 171.45 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 171.45 143.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 171.45 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 171.45 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 171.45 139.7 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "56c5a60b-3d79-5cf9-9719-7b9048f6f800")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05014")
-					(unit 1)
-				)
-			)
-		)
-	)
 	(symbol
 		(lib_id "Device:C")
-		(at 233.68 63.5 0)
+		(at 238.76 107.95 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3508,7 +2214,7 @@
 		(dnp no)
 		(uuid "4b3e419f-53ef-5162-938f-7f191028fb01")
 		(property "Reference" "C18"
-			(at 236.22 62.23 0)
+			(at 241.3 106.68 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3517,7 +2223,7 @@
 			)
 		)
 		(property "Value" "22u 25V"
-			(at 236.22 64.77 0)
+			(at 241.3 109.22 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3526,7 +2232,7 @@
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_1206_3216Metric"
-			(at 234.6452 67.31 0)
+			(at 239.7252 111.76 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3535,7 +2241,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 233.68 63.5 0)
+			(at 238.76 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3544,7 +2250,7 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
-			(at 233.68 63.5 0)
+			(at 238.76 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3553,7 +2259,7 @@
 			)
 		)
 		(property "LCSC" "C12891"
-			(at 233.68 63.5 0)
+			(at 238.76 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3576,96 +2282,9 @@
 			)
 		)
 	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 233.68 59.69 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "ee4bb2d8-0a97-5648-b5d8-e865abe53aff")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 233.68 59.69 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 233.68 67.31 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "fb7580ed-5135-561b-accd-3de301262a16")
-		(property "Reference" "#PWR05015"
-			(at 233.68 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 233.68 71.12 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 233.68 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 233.68 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 233.68 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "eee7ac3f-9bf5-558e-aa96-c660607d2d83")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05015")
-					(unit 1)
-				)
-			)
-		)
-	)
 	(symbol
 		(lib_id "Device:C")
-		(at 243.84 63.5 0)
+		(at 251.46 107.95 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3673,7 +2292,7 @@
 		(dnp no)
 		(uuid "0ee3f3a9-983b-540d-8911-c46ad7219f40")
 		(property "Reference" "C19"
-			(at 246.38 62.23 0)
+			(at 254 106.68 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3682,7 +2301,7 @@
 			)
 		)
 		(property "Value" "100n"
-			(at 246.38 64.77 0)
+			(at 254 109.22 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3691,7 +2310,7 @@
 			)
 		)
 		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
-			(at 244.8052 67.31 0)
+			(at 252.4252 111.76 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3700,7 +2319,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 243.84 63.5 0)
+			(at 251.46 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3709,7 +2328,7 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
-			(at 243.84 63.5 0)
+			(at 251.46 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3732,96 +2351,9 @@
 			)
 		)
 	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 243.84 59.69 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "96e08f36-ca16-5628-8760-05e26308623c")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 243.84 59.69 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 243.84 67.31 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "353ba125-0852-5ec3-b2c7-a79a592d0953")
-		(property "Reference" "#PWR05016"
-			(at 243.84 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 243.84 71.12 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 243.84 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 243.84 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 243.84 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "06869cd9-e213-5085-8e66-d7a627d332e4")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05016")
-					(unit 1)
-				)
-			)
-		)
-	)
 	(symbol
 		(lib_id "Device:C_Polarized")
-		(at 254 63.5 0)
+		(at 264.16 107.95 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -3829,7 +2361,7 @@
 		(dnp yes)
 		(uuid "681a0b89-6a9d-56c0-b715-cec5de7c2f67")
 		(property "Reference" "C20"
-			(at 256.54 62.23 0)
+			(at 266.7 106.68 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3838,7 +2370,7 @@
 			)
 		)
 		(property "Value" "polymer"
-			(at 256.54 64.77 0)
+			(at 266.7 109.22 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3847,7 +2379,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 254.9652 67.31 0)
+			(at 265.1252 111.76 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3856,7 +2388,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 254 63.5 0)
+			(at 264.16 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3865,7 +2397,7 @@
 			)
 		)
 		(property "Description" "Polarized capacitor"
-			(at 254 63.5 0)
+			(at 264.16 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -3888,249 +2420,17 @@
 			)
 		)
 	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 254 59.69 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "9fd9ce09-5bd9-58ff-baa0-58bb18da2811")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 254 59.69 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 254 67.31 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "9bbb0566-1d8a-5670-aebd-66cc8b9e09c5")
-		(property "Reference" "#PWR05017"
-			(at 254 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 254 71.12 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 254 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 254 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 254 67.31 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "d6605482-c53a-51a8-838d-b081f715b312")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05017")
-					(unit 1)
-				)
-			)
-		)
-	)
 	(symbol
 		(lib_id "Device:R")
-		(at 86.36 160.02 0)
+		(at 162.56 133.35 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "ab4403d6-36dd-529b-808b-8bdf4c53a2c1")
-		(property "Reference" "R20"
-			(at 88.9 158.75 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "100k"
-			(at 88.9 161.29 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 84.582 160.02 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 86.36 160.02 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor"
-			(at 86.36 160.02 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "36001f40-f0b0-5177-88ed-504f1f501529")
-		)
-		(pin "2"
-			(uuid "5c854181-009b-5173-ab33-ce64e9b2c26a")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "R20")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(label "WM_PPS"
-		(at 86.36 156.21 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "3f5e2064-73ac-5e20-945f-05c6cf0d3ed0")
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 86.36 163.83 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "b3c2e1c3-12cb-5b88-a338-9f28abe71187")
-		(property "Reference" "#PWR05018"
-			(at 86.36 163.83 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 86.36 167.64 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 86.36 163.83 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 86.36 163.83 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 86.36 163.83 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "0ca6bd12-9e2c-546c-b39b-6bcecb5511e8")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05018")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R")
-		(at 76.2 50.8 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "9040c097-beef-516a-b232-733702b32ef7")
-		(property "Reference" "R21"
-			(at 78.74 49.53 0)
+		(uuid "945b3507-9828-5d96-9cc9-10b8e41b48d8")
+		(property "Reference" "R16"
+			(at 165.1 132.08 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4139,7 +2439,7 @@
 			)
 		)
 		(property "Value" "4.7k"
-			(at 78.74 52.07 0)
+			(at 165.1 134.62 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4148,7 +2448,7 @@
 			)
 		)
 		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 74.422 50.8 0)
+			(at 160.782 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4157,7 +2457,7 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 76.2 50.8 0)
+			(at 162.56 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4166,7 +2466,7 @@
 			)
 		)
 		(property "Description" "Resistor"
-			(at 76.2 50.8 0)
+			(at 162.56 133.35 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4175,180 +2475,23 @@
 			)
 		)
 		(pin "1"
-			(uuid "6bf31bfb-f233-57d0-ab97-def4135ffd30")
+			(uuid "daf8ad2d-11f6-5f2c-addf-f89c8c4c0b46")
 		)
 		(pin "2"
-			(uuid "229316c5-8255-5241-8056-5c3ba366cbbd")
+			(uuid "24f388c4-19ab-5220-95b5-8bc8b34a5cf8")
 		)
 		(instances
 			(project "picocell-gw"
 				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "R21")
+					(reference "R16")
 					(unit 1)
 				)
-			)
-		)
-	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 76.2 46.99 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "123b8eab-70f1-5e48-81b2-00ce34597d63")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 76.2 46.99 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "I2C_SDA"
-		(shape passive)
-		(at 76.2 54.61 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "52957d9d-64d2-56f5-9fca-6fdf40fb0612")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 76.2 54.61 270)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R")
-		(at 86.36 50.8 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "ed5641ad-e81b-57fc-a7ce-2b98d6ce8231")
-		(property "Reference" "R22"
-			(at 88.9 49.53 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Value" "4.7k"
-			(at 88.9 52.07 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
-			(at 84.582 50.8 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 86.36 50.8 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor"
-			(at 86.36 50.8 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "8dc80618-0682-53b5-9bd8-f6430f5f876b")
-		)
-		(pin "2"
-			(uuid "6bc33c56-17c0-5172-a322-3131c3daf154")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "R22")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 86.36 46.99 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "fa6bf5d1-ebdd-54c7-8f01-a915bd176366")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 86.36 46.99 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "I2C_SCL"
-		(shape passive)
-		(at 86.36 54.61 270)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "21502a98-ef98-5095-a437-dd6724d7c69a")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 86.36 54.61 270)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
 			)
 		)
 	)
 	(symbol
 		(lib_id "Security:ATECC608B-SSHDA")
-		(at 297.18 127 0)
+		(at 106.68 146.05 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -4356,7 +2499,7 @@
 		(dnp yes)
 		(uuid "ac5d9a9b-5d40-5208-a7d2-750efd97063a")
 		(property "Reference" "U4"
-			(at 300.99 120.65 0)
+			(at 110.49 139.7 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4364,7 +2507,7 @@
 			)
 		)
 		(property "Value" "ATECC608B-SSHDA"
-			(at 307.34 133.35 0)
+			(at 116.84 152.4 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4372,7 +2515,7 @@
 			)
 		)
 		(property "Footprint" "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
-			(at 297.18 127 0)
+			(at 106.68 146.05 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4381,7 +2524,7 @@
 			)
 		)
 		(property "Datasheet" "https://ww1.microchip.com/downloads/aemDocuments/documents/SCBU/ProductDocuments/DataSheets/ATECC608B-CryptoAuthentication-Device-Summary-Data-Sheet-DS40002239B.pdf"
-			(at 300.99 120.65 0)
+			(at 110.49 139.7 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4390,7 +2533,7 @@
 			)
 		)
 		(property "Description" "Cryptographic Co-Processor with Secure Hardware-based 16 Key Storage, ECDSA and ECDH support, I2C, SOIC-8"
-			(at 297.18 127 0)
+			(at 106.68 146.05 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4399,7 +2542,7 @@
 			)
 		)
 		(property "LCSC" "C1518769"
-			(at 297.18 127 0)
+			(at 106.68 146.05 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4441,147 +2584,16 @@
 		)
 	)
 	(symbol
-		(lib_id "power:GND")
-		(at 297.18 134.62 0)
+		(lib_id "Device:R")
+		(at 134.62 107.95 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "2bd75fd6-4b48-57f7-8bc8-f72d54e41886")
-		(property "Reference" "#PWR05019"
-			(at 297.18 134.62 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 297.18 138.43 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 297.18 134.62 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 297.18 134.62 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 297.18 134.62 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "b6926ec3-3a78-5db0-84a8-2da39f97bd07")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05019")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(global_label "I2C_SDA"
-		(shape passive)
-		(at 304.8 124.46 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "fd3426b1-cf86-5a0f-a18d-7ae3f6f6bdd0")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 304.8 124.46 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "I2C_SCL"
-		(shape passive)
-		(at 304.8 129.54 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "6559e0cd-44ba-555e-950e-e62bc3587f32")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 304.8 129.54 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 297.18 119.38 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "a5c14623-7f51-5109-8f4d-a2d30ebc5ab7")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 297.18 119.38 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:C")
-		(at 314.96 127 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp yes)
-		(uuid "1a67f2fa-3cab-5780-8194-aaeb6aca1e07")
-		(property "Reference" "C21"
-			(at 317.5 125.73 0)
+		(uuid "9040c097-beef-516a-b232-733702b32ef7")
+		(property "Reference" "R21"
+			(at 137.16 106.68 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4589,8 +2601,8 @@
 				(justify left)
 			)
 		)
-		(property "Value" "100n"
-			(at 317.5 128.27 0)
+		(property "Value" "4.7k"
+			(at 137.16 109.22 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4598,8 +2610,8 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
-			(at 315.9252 130.81 0)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 132.842 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4608,7 +2620,145 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 314.96 127 0)
+			(at 134.62 107.95 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 134.62 107.95 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "6bf31bfb-f233-57d0-ab97-def4135ffd30")
+		)
+		(pin "2"
+			(uuid "229316c5-8255-5241-8056-5c3ba366cbbd")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "R21")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 129.54 107.95 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "ed5641ad-e81b-57fc-a7ce-2b98d6ce8231")
+		(property "Reference" "R22"
+			(at 127 106.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "4.7k"
+			(at 127 109.22 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 127.762 107.95 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 129.54 107.95 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 129.54 107.95 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "8dc80618-0682-53b5-9bd8-f6430f5f876b")
+		)
+		(pin "2"
+			(uuid "6bc33c56-17c0-5172-a322-3131c3daf154")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "R22")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 96.52 107.95 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp yes)
+		(uuid "1a67f2fa-3cab-5780-8194-aaeb6aca1e07")
+		(property "Reference" "C21"
+			(at 99.06 106.68 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "100n"
+			(at 99.06 109.22 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+			(at 97.4852 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 96.52 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4617,7 +2767,7 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
-			(at 314.96 127 0)
+			(at 96.52 107.95 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4640,96 +2790,9 @@
 			)
 		)
 	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 314.96 123.19 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "e6a8fc54-41b4-537e-9037-b97b4ea2788d")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 314.96 123.19 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(symbol
-		(lib_id "power:GND")
-		(at 314.96 130.81 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "a35765c7-b70e-506d-a45d-55d0368b5d74")
-		(property "Reference" "#PWR05020"
-			(at 314.96 130.81 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 314.96 134.62 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 314.96 130.81 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 314.96 130.81 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 314.96 130.81 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "cd728f91-0abf-5469-8232-3848683492f2")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05020")
-					(unit 1)
-				)
-			)
-		)
-	)
 	(symbol
 		(lib_id "74xGxx:74LVC1G17")
-		(at 63.5 177.8 0)
+		(at 154.94 167.64 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -4737,7 +2800,7 @@
 		(dnp yes)
 		(uuid "dc474367-8e9e-53d9-a4a6-565b5fc2fd49")
 		(property "Reference" "U5"
-			(at 63.5 173.99 0)
+			(at 154.94 163.83 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4746,7 +2809,7 @@
 			)
 		)
 		(property "Value" "SN74LVC1G17DBVR"
-			(at 63.5 181.61 0)
+			(at 154.94 171.45 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4755,7 +2818,7 @@
 			)
 		)
 		(property "Footprint" "Package_TO_SOT_SMD:SOT-23-5"
-			(at 60.96 177.8 0)
+			(at 152.4 167.64 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4764,7 +2827,7 @@
 			)
 		)
 		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/sn74lvc1g17.pdf"
-			(at 63.5 184.15 0)
+			(at 154.94 173.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4773,7 +2836,7 @@
 			)
 		)
 		(property "Description" "Single Schmitt Buffer Gate, Low-Voltage CMOS"
-			(at 63.5 177.8 0)
+			(at 154.94 167.64 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4805,137 +2868,17 @@
 			)
 		)
 	)
-	(global_label "GNSS_PPS"
-		(shape passive)
-		(at 50.8 177.8 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "403b4e04-ccb6-510e-9a95-ed2cb261ea47")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 50.8 177.8 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
 	(symbol
-		(lib_id "power:GND")
-		(at 58.42 187.96 0)
+		(lib_id "Device:R")
+		(at 180.34 158.75 0)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "490fefd9-35a0-5046-946b-80df0cccdf5e")
-		(property "Reference" "#PWR05021"
-			(at 58.42 187.96 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 58.42 191.77 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 58.42 187.96 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 58.42 187.96 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 58.42 187.96 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "6820d712-d42b-5bfa-9a42-96be43b34ace")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05021")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(label "WM_PPS"
-		(at 73.66 177.8 0)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "693b72ca-b442-52b9-8ec1-cdaf66714f7d")
-	)
-	(global_label "3V3_WM"
-		(shape passive)
-		(at 58.42 167.64 90)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left)
-		)
-		(uuid "232ebbff-5c51-534d-ae2b-a5f858102e7e")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 58.42 167.64 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-				(hide yes)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:C")
-		(at 76.2 193.04 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp yes)
-		(uuid "e6d7c513-1900-5f99-8594-bdabff51abac")
-		(property "Reference" "C22"
-			(at 78.74 191.77 0)
+		(uuid "ab4403d6-36dd-529b-808b-8bdf4c53a2c1")
+		(property "Reference" "R20"
+			(at 182.88 157.48 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4943,8 +2886,8 @@
 				(justify left)
 			)
 		)
-		(property "Value" "100n"
-			(at 78.74 194.31 0)
+		(property "Value" "100k"
+			(at 182.88 160.02 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4952,8 +2895,8 @@
 				(justify left)
 			)
 		)
-		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
-			(at 77.1652 196.85 0)
+		(property "Footprint" "Resistor_SMD:R_0603_1608Metric"
+			(at 178.562 158.75 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4962,7 +2905,76 @@
 			)
 		)
 		(property "Datasheet" "~"
-			(at 76.2 193.04 0)
+			(at 180.34 158.75 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor"
+			(at 180.34 158.75 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "36001f40-f0b0-5177-88ed-504f1f501529")
+		)
+		(pin "2"
+			(uuid "5c854181-009b-5173-ab33-ce64e9b2c26a")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "R20")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 142.24 156.21 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp yes)
+		(uuid "e6d7c513-1900-5f99-8594-bdabff51abac")
+		(property "Reference" "C22"
+			(at 144.78 154.94 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "100n"
+			(at 144.78 157.48 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Capacitor_SMD:C_0603_1608Metric"
+			(at 143.2052 160.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 142.24 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4971,7 +2983,7 @@
 			)
 		)
 		(property "Description" "Unpolarized capacitor"
-			(at 76.2 193.04 0)
+			(at 142.24 156.21 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -4994,9 +3006,855 @@
 			)
 		)
 	)
+	(no_connect
+		(at 193.04 142.24)
+		(uuid "f743e6c8-80b2-5c26-864c-1dc6ebad80f5")
+	)
+	(no_connect
+		(at 193.04 149.86)
+		(uuid "f64ad37b-388a-5bda-8026-a5ecbb486400")
+	)
+	(no_connect
+		(at 193.04 152.4)
+		(uuid "c9d5fc76-d333-52d4-aeca-ee16938043d2")
+	)
+	(no_connect
+		(at 193.04 157.48)
+		(uuid "091f6dd8-6aaa-546c-ac2c-9ebb1a5f07b7")
+	)
+	(no_connect
+		(at 193.04 160.02)
+		(uuid "8db5fa2c-bbae-5135-b52c-266c8f67650c")
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 199.39 172.72 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "284a3756-ae57-5444-adb4-1be94cd5f84c")
+		(property "Reference" "#PWR05001"
+			(at 199.39 172.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 199.39 176.53 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 199.39 172.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 199.39 172.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 199.39 172.72 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "2a3b663b-8aa7-557e-a964-237db30d6ac5")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "#PWR05001")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 238.76 111.76 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "a3b808ee-97a5-5a68-af2f-d7ede1ed52d3")
+		(property "Reference" "#PWR05002"
+			(at 238.76 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 238.76 115.57 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 238.76 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 238.76 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 238.76 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "49cdf7ee-84c9-53a9-9275-1d910108549f")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "#PWR05002")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 251.46 111.76 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "92a946cb-0002-5e53-8415-30441716ac55")
+		(property "Reference" "#PWR05003"
+			(at 251.46 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 251.46 115.57 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 251.46 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 251.46 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 251.46 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "b6f6c1d6-b1d4-59f8-bf96-a08bb05d739b")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "#PWR05003")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 264.16 111.76 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "bd0a8064-3223-5209-a18e-0db0616bd0ba")
+		(property "Reference" "#PWR05004"
+			(at 264.16 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 264.16 115.57 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 264.16 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 264.16 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 264.16 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "e0aae8e4-ae1a-5767-b990-4e331ab9c683")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "#PWR05004")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 162.56 137.16 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "fa3fd4ed-5858-5eea-8244-50d68674d64d")
+		(property "Reference" "#PWR05005"
+			(at 162.56 137.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 162.56 140.97 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 162.56 137.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 162.56 137.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 162.56 137.16 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "907f4c71-caa4-595b-92ea-40a720154af1")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "#PWR05005")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 106.68 153.67 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "5a89935e-1727-5948-a1dd-a8b2e6116292")
+		(property "Reference" "#PWR05006"
+			(at 106.68 153.67 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 106.68 157.48 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 106.68 153.67 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 106.68 153.67 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 106.68 153.67 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "3c74fe86-b9b8-5037-9494-8b5b265244c6")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "#PWR05006")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 96.52 111.76 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "769f95d5-6a45-5586-808c-65888c6a1e10")
+		(property "Reference" "#PWR05007"
+			(at 96.52 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 96.52 115.57 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 96.52 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 96.52 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 96.52 111.76 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "2d2272b8-a1d4-5fba-92b2-e0d35bc9b81b")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "#PWR05007")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 149.86 177.8 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "c7dc332b-07e8-50f7-8cba-402e6de73db5")
+		(property "Reference" "#PWR05008"
+			(at 149.86 177.8 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 149.86 181.61 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 149.86 177.8 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 149.86 177.8 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 149.86 177.8 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "ede57375-de40-538c-8df9-c5c36721c2fc")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "#PWR05008")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 180.34 162.56 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "9c4afe53-96a1-593d-9eef-19e98ead3330")
+		(property "Reference" "#PWR05009"
+			(at 180.34 162.56 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 180.34 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 180.34 162.56 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 180.34 162.56 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 180.34 162.56 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "195f0349-6b89-5e16-89a3-21c4bfc86cf7")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "#PWR05009")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 142.24 160.02 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "255c2f3d-065d-51c5-9593-8ab1e7e6e191")
+		(property "Reference" "#PWR05010"
+			(at 142.24 160.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 142.24 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 142.24 160.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 142.24 160.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 142.24 160.02 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "ad5a8ea6-51ee-553c-979e-346f00814ad5")
+		)
+		(instances
+			(project "picocell-gw"
+				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
+					(reference "#PWR05010")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(global_label "SPI_SCK"
+		(shape passive)
+		(at 187.96 119.38 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "bf6148c3-9365-508e-95c1-23c7a177f93d")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 187.96 119.38 180)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "SPI_MOSI"
+		(shape passive)
+		(at 187.96 121.92 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "01e62641-3577-5e00-9a93-c70d383324ac")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 187.96 121.92 180)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "SPI_MISO"
+		(shape passive)
+		(at 187.96 124.46 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "faac4904-ff6d-5f5c-9083-1adce7afe824")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 187.96 124.46 180)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "SX1302_CS"
+		(shape passive)
+		(at 187.96 127 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "71e26e9b-38cf-5f08-bd73-8bea82669744")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 187.96 127 180)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "SX1262_CS"
+		(shape passive)
+		(at 187.96 132.08 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "cb03405e-5653-59ff-a120-79ae28fc086b")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 187.96 132.08 180)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "SX1262_RESET"
+		(shape passive)
+		(at 187.96 134.62 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "0bd95518-d25b-5370-8127-dfa22df1ac16")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 187.96 134.62 180)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "SX1262_BUSY"
+		(shape passive)
+		(at 187.96 137.16 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "31c923b2-282f-5285-923f-a87e5943e0b5")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 187.96 137.16 180)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "SX1262_DIO1"
+		(shape passive)
+		(at 187.96 139.7 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "7d4f5174-83b8-5fe1-8d34-416767c52bc1")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 187.96 139.7 180)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
 	(global_label "3V3_WM"
 		(shape passive)
-		(at 76.2 189.23 90)
+		(at 274.32 104.14 0)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -5004,9 +3862,9 @@
 			)
 			(justify left)
 		)
-		(uuid "d50df17b-6aa0-5780-967a-aeb3e199774a")
+		(uuid "0ad8dfe2-6c8e-5358-859e-af3df270e72b")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 76.2 189.23 90)
+			(at 274.32 104.14 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5016,74 +3874,1130 @@
 			)
 		)
 	)
-	(symbol
-		(lib_id "power:GND")
-		(at 76.2 196.85 0)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(uuid "0b8a0b6f-c9a8-5174-a79e-227832c03cfc")
-		(property "Reference" "#PWR05022"
-			(at 76.2 196.85 0)
+	(global_label "SX1302_RESET"
+		(shape passive)
+		(at 157.48 129.54 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "0698a995-dff5-5f3f-aa34-8ddaa518b43d")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 157.48 129.54 180)
 			(effects
 				(font
 					(size 1.27 1.27)
 				)
+				(justify right)
 				(hide yes)
-			)
-		)
-		(property "Value" "GND"
-			(at 76.2 200.66 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" ""
-			(at 76.2 196.85 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" ""
-			(at 76.2 196.85 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" ""
-			(at 76.2 196.85 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "1"
-			(uuid "c1fa6425-f25c-5ed4-862d-f2f3564bf1fd")
-		)
-		(instances
-			(project "picocell-gw"
-				(path "/3260c447-5a79-5ea3-847a-c97e2c900786/a5690d8c-3e84-5e9e-912e-1be5a28bb9fc"
-					(reference "#PWR05022")
-					(unit 1)
-				)
 			)
 		)
 	)
-	(text "J2: mPCIe socket footprint TBD (XUNPU PCIE-52P52H) + M2 standoff\n(Wuerth 9774030243R, height to check). LoRa antenna is the U.FL on the module."
+	(global_label "I2C_SDA"
+		(shape passive)
+		(at 119.38 137.16 90)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "bdf7f708-d0c5-5420-b655-1849b2b5d882")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 119.38 137.16 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "I2C_SCL"
+		(shape passive)
+		(at 116.84 156.21 270)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "a08bccfe-30fa-5b94-b1ae-3b878791ffd1")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 116.84 156.21 270)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "GNSS_PPS"
+		(shape passive)
+		(at 139.7 167.64 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "ac98b30d-43a6-54c4-bb43-3a21e8510545")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 139.7 167.64 180)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(global_label "3V3_WM"
+		(shape passive)
+		(at 137.16 152.4 180)
+		(fields_autoplaced yes)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right)
+		)
+		(uuid "d1332e29-9ad2-5306-9d57-141bc870d97a")
+		(property "Intersheetrefs" "${INTERSHEET_REFS}"
+			(at 137.16 152.4 180)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+				(hide yes)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 187.96 119.38)
+			(xy 193.04 119.38)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "99d6bb00-028b-53ee-a4f3-7887d22b4a84")
+	)
+	(wire
+		(pts
+			(xy 187.96 121.92)
+			(xy 193.04 121.92)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d7815bc9-634f-515a-8d0f-0929f2fcfcc0")
+	)
+	(wire
+		(pts
+			(xy 187.96 124.46)
+			(xy 193.04 124.46)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e7a6c3f6-628b-5c11-b687-40893dd2b086")
+	)
+	(wire
+		(pts
+			(xy 187.96 127)
+			(xy 193.04 127)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1c489ff1-3d0d-584b-a1bb-261208a903d0")
+	)
+	(wire
+		(pts
+			(xy 187.96 132.08)
+			(xy 193.04 132.08)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3db56948-6284-5089-9d57-6e9ea6134898")
+	)
+	(wire
+		(pts
+			(xy 187.96 134.62)
+			(xy 193.04 134.62)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "272551c7-3072-5570-82df-c3ff1d49cd8b")
+	)
+	(wire
+		(pts
+			(xy 187.96 137.16)
+			(xy 193.04 137.16)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "853cf25a-3fcd-53f0-ab6d-8d97fc329924")
+	)
+	(wire
+		(pts
+			(xy 187.96 139.7)
+			(xy 193.04 139.7)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0cf2f434-c2b3-5cc3-a669-40f2b7022e6a")
+	)
+	(wire
+		(pts
+			(xy 210.82 104.14)
+			(xy 210.82 109.22)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c8232bc9-6423-5d84-b953-7357c67b4eb3")
+	)
+	(wire
+		(pts
+			(xy 213.36 104.14)
+			(xy 213.36 109.22)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b60d9eb2-1aba-54a1-8f4c-97d5bde9f819")
+	)
+	(wire
+		(pts
+			(xy 215.9 104.14)
+			(xy 215.9 109.22)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8f0ab531-50ec-5276-a6b5-9c2de0683927")
+	)
+	(wire
+		(pts
+			(xy 218.44 104.14)
+			(xy 218.44 109.22)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "25c28ea1-a2d3-5adf-840e-a78f3dbe737b")
+	)
+	(wire
+		(pts
+			(xy 220.98 104.14)
+			(xy 220.98 109.22)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f58cf7e5-219b-5247-8a2d-e3a3b8d212cf")
+	)
+	(wire
+		(pts
+			(xy 96.52 104.14)
+			(xy 106.68 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "eae05690-2673-53d7-b4cf-c83b6e74e2b9")
+	)
+	(wire
+		(pts
+			(xy 106.68 104.14)
+			(xy 129.54 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "573871a9-afcd-595d-9b17-e249cdb1b660")
+	)
+	(wire
+		(pts
+			(xy 129.54 104.14)
+			(xy 134.62 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6c71291e-6e5d-5247-91b9-1d22ca737453")
+	)
+	(wire
+		(pts
+			(xy 134.62 104.14)
+			(xy 210.82 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e786bb1c-188a-5180-ac57-638ba5b3f5e3")
+	)
+	(wire
+		(pts
+			(xy 210.82 104.14)
+			(xy 213.36 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1cfa88fb-158c-5077-9286-f59cf1ac44f1")
+	)
+	(wire
+		(pts
+			(xy 213.36 104.14)
+			(xy 215.9 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7332c8b4-8c4f-566a-9622-ad3bbb8542db")
+	)
+	(wire
+		(pts
+			(xy 215.9 104.14)
+			(xy 218.44 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e52382a7-30a3-5682-bafe-4c55336e58f7")
+	)
+	(wire
+		(pts
+			(xy 218.44 104.14)
+			(xy 220.98 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "bc07c777-7b4f-5bde-a519-b6aeeb4a655b")
+	)
+	(wire
+		(pts
+			(xy 220.98 104.14)
+			(xy 238.76 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b0ce0b1c-8a7e-5971-ad73-bbb7a211df8a")
+	)
+	(wire
+		(pts
+			(xy 238.76 104.14)
+			(xy 251.46 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "483dd355-e4a3-57a3-9679-3db12ceab895")
+	)
+	(wire
+		(pts
+			(xy 251.46 104.14)
+			(xy 264.16 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "27595d3f-335d-58b1-b5b8-5ba7d9bae926")
+	)
+	(wire
+		(pts
+			(xy 264.16 104.14)
+			(xy 274.32 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0c3b7c65-cfc2-5dec-a98b-0c9ea5c4df35")
+	)
+	(wire
+		(pts
+			(xy 199.39 170.18)
+			(xy 199.39 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2a4bf316-cb1f-5705-9fe2-49aa77ca238c")
+	)
+	(wire
+		(pts
+			(xy 201.93 170.18)
+			(xy 201.93 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ed95f6d2-5873-5cd8-948b-137d81d968f7")
+	)
+	(wire
+		(pts
+			(xy 204.47 170.18)
+			(xy 204.47 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "dccfb96a-dd3a-5de7-a836-b8a6290f2817")
+	)
+	(wire
+		(pts
+			(xy 207.01 170.18)
+			(xy 207.01 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "05cc6fb3-8ae0-5115-a333-927fd8345d54")
+	)
+	(wire
+		(pts
+			(xy 209.55 170.18)
+			(xy 209.55 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e50a79d5-a0eb-5450-862e-e5576cd690fb")
+	)
+	(wire
+		(pts
+			(xy 212.09 170.18)
+			(xy 212.09 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e8ccacce-0cd5-5350-afda-036210459105")
+	)
+	(wire
+		(pts
+			(xy 214.63 170.18)
+			(xy 214.63 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8a5979a9-5688-5f64-8d48-b6e56282c2c9")
+	)
+	(wire
+		(pts
+			(xy 217.17 170.18)
+			(xy 217.17 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4011d644-728d-5431-bf53-d9692ac40dfd")
+	)
+	(wire
+		(pts
+			(xy 219.71 170.18)
+			(xy 219.71 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e8d90dfc-7987-5486-8fcd-1af63d0ac8ef")
+	)
+	(wire
+		(pts
+			(xy 222.25 170.18)
+			(xy 222.25 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0b4a47d9-04e0-5f41-ab8b-98e63fe9a2f1")
+	)
+	(wire
+		(pts
+			(xy 224.79 170.18)
+			(xy 224.79 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "02b9dd8a-1ffd-5acd-929e-c4f759ff6419")
+	)
+	(wire
+		(pts
+			(xy 227.33 170.18)
+			(xy 227.33 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1d8c0b45-8595-539a-9b43-ff71e6dc5208")
+	)
+	(wire
+		(pts
+			(xy 229.87 170.18)
+			(xy 229.87 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e9e168c2-6bad-57b8-83c2-67ccb18a8066")
+	)
+	(wire
+		(pts
+			(xy 232.41 170.18)
+			(xy 232.41 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "68029878-76eb-5d42-8c03-12ee931d88bb")
+	)
+	(wire
+		(pts
+			(xy 199.39 172.72)
+			(xy 201.93 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "de9c1503-7a10-5ba8-9825-edb60ba85610")
+	)
+	(wire
+		(pts
+			(xy 201.93 172.72)
+			(xy 204.47 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "29595acf-3b50-59a8-95a1-fe6a60bbc54f")
+	)
+	(wire
+		(pts
+			(xy 204.47 172.72)
+			(xy 207.01 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f06b131d-542e-55d6-a0ca-59a269e16bca")
+	)
+	(wire
+		(pts
+			(xy 207.01 172.72)
+			(xy 209.55 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3e76fd6a-258a-5732-b431-db82c084b823")
+	)
+	(wire
+		(pts
+			(xy 209.55 172.72)
+			(xy 212.09 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1404bfc7-3844-5c6a-bf87-60acaf9fc69b")
+	)
+	(wire
+		(pts
+			(xy 212.09 172.72)
+			(xy 214.63 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "95fdeb62-d2ce-55f5-ae6d-91a8ace0da71")
+	)
+	(wire
+		(pts
+			(xy 214.63 172.72)
+			(xy 217.17 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e8621385-43d8-5293-ac91-00d69bfeba98")
+	)
+	(wire
+		(pts
+			(xy 217.17 172.72)
+			(xy 219.71 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "dcfa7943-0f81-542a-a2e4-6c9a6f262d38")
+	)
+	(wire
+		(pts
+			(xy 219.71 172.72)
+			(xy 222.25 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6221d9a5-4db6-5679-929e-f8282b911129")
+	)
+	(wire
+		(pts
+			(xy 222.25 172.72)
+			(xy 224.79 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "581c0101-1b73-5b16-a52c-4a867860cc03")
+	)
+	(wire
+		(pts
+			(xy 224.79 172.72)
+			(xy 227.33 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d15e4b88-91b0-5589-8fd9-1939610bbcb7")
+	)
+	(wire
+		(pts
+			(xy 227.33 172.72)
+			(xy 229.87 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "86aa7b87-4af2-572b-8143-cb2af240b643")
+	)
+	(wire
+		(pts
+			(xy 229.87 172.72)
+			(xy 232.41 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c9ebda3b-ed71-5b35-9aac-c51b9710e0d4")
+	)
+	(wire
+		(pts
+			(xy 162.56 129.54)
+			(xy 193.04 129.54)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c595293e-c9d5-5a6b-bef9-4bf71415a2c1")
+	)
+	(wire
+		(pts
+			(xy 157.48 129.54)
+			(xy 162.56 129.54)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5b6e90ac-010f-5a31-b64d-13939e2a3e0b")
+	)
+	(wire
+		(pts
+			(xy 134.62 144.78)
+			(xy 193.04 144.78)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "aa881306-0e9c-57fe-88fe-2c01c1d84725")
+	)
+	(wire
+		(pts
+			(xy 119.38 144.78)
+			(xy 134.62 144.78)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ef4ea0df-ae07-5a91-8a8a-56af07a2deb2")
+	)
+	(wire
+		(pts
+			(xy 119.38 143.51)
+			(xy 119.38 144.78)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5cef568c-2b8d-508d-b7ff-ccf48ac990dc")
+	)
+	(wire
+		(pts
+			(xy 114.3 143.51)
+			(xy 119.38 143.51)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a1861575-0800-5a6f-bd5d-29f7f1e99c49")
+	)
+	(wire
+		(pts
+			(xy 129.54 147.32)
+			(xy 193.04 147.32)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e35c387f-3618-5f20-bdf4-e0a02dcd44e6")
+	)
+	(wire
+		(pts
+			(xy 116.84 147.32)
+			(xy 129.54 147.32)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5c710835-5c45-5f79-8661-8c748ab3b31e")
+	)
+	(wire
+		(pts
+			(xy 116.84 147.32)
+			(xy 116.84 148.59)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "c8f51ca0-9783-5934-b898-342721b7edd4")
+	)
+	(wire
+		(pts
+			(xy 114.3 148.59)
+			(xy 116.84 148.59)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d6839d53-8f1a-5d3f-8f5c-d40b4ac5d023")
+	)
+	(wire
+		(pts
+			(xy 119.38 137.16)
+			(xy 119.38 143.51)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1f6d05f9-17c0-54c5-910f-08fc1375ca3b")
+	)
+	(wire
+		(pts
+			(xy 116.84 148.59)
+			(xy 116.84 156.21)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7815f26c-1647-573d-9d33-1799cfdf0fe2")
+	)
+	(wire
+		(pts
+			(xy 134.62 111.76)
+			(xy 134.62 144.78)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6e6b6a2a-256e-562e-823a-5b983805a2dc")
+	)
+	(wire
+		(pts
+			(xy 129.54 111.76)
+			(xy 129.54 147.32)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "952e172a-6985-5ecc-a661-192fe2f9d1cc")
+	)
+	(wire
+		(pts
+			(xy 106.68 104.14)
+			(xy 106.68 138.43)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "96b7dcfb-8e18-5e40-bfa4-5725690fc63e")
+	)
+	(wire
+		(pts
+			(xy 180.34 154.94)
+			(xy 193.04 154.94)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "37917b24-4c17-5471-a7a5-32cc0ff8e9c9")
+	)
+	(wire
+		(pts
+			(xy 170.18 154.94)
+			(xy 180.34 154.94)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "eeb94406-e142-5f60-b8ce-5f566d1304f3")
+	)
+	(wire
+		(pts
+			(xy 170.18 154.94)
+			(xy 170.18 167.64)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1cb8db65-c56b-5b7c-a65a-02f8e82028fb")
+	)
+	(wire
+		(pts
+			(xy 165.1 167.64)
+			(xy 170.18 167.64)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "70015e2a-daef-55d6-914a-be6c5b7a6a14")
+	)
+	(wire
+		(pts
+			(xy 139.7 167.64)
+			(xy 142.24 167.64)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "67a29677-0d34-5e9f-9160-df0767c4ea1d")
+	)
+	(wire
+		(pts
+			(xy 149.86 152.4)
+			(xy 149.86 157.48)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3b84aa7e-57ef-5724-93c3-4bb18a9ff5a7")
+	)
+	(wire
+		(pts
+			(xy 142.24 152.4)
+			(xy 149.86 152.4)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6b6a3f71-fd07-5457-9932-c10754e9b7df")
+	)
+	(wire
+		(pts
+			(xy 137.16 152.4)
+			(xy 142.24 152.4)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d3c56d24-07a1-5976-b845-b855b8a8604d")
+	)
+	(junction
+		(at 210.82 104.14)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "0d658b86-61b2-5d5d-83c9-ead3af75b911")
+	)
+	(junction
+		(at 213.36 104.14)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "d18d96ad-1652-5c9f-950f-fd1c32d04ad2")
+	)
+	(junction
+		(at 215.9 104.14)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "b6bb66c1-9b3f-5765-a6fb-502440b0498c")
+	)
+	(junction
+		(at 218.44 104.14)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "59b24401-398a-51c3-a2c4-b9fca8b76068")
+	)
+	(junction
+		(at 220.98 104.14)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "5444920a-1cd5-5594-828e-888db314e218")
+	)
+	(junction
+		(at 106.68 104.14)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "351e7523-931d-51c3-b102-57db3f1bb9b7")
+	)
+	(junction
+		(at 129.54 104.14)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "277bdc6c-eea6-5c62-af2f-e2a9293788e7")
+	)
+	(junction
+		(at 134.62 104.14)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "b25702d1-660b-5946-a06d-bab41db8a427")
+	)
+	(junction
+		(at 238.76 104.14)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "0ecd2a54-49a4-51c9-a3d5-5c841d8c9c2d")
+	)
+	(junction
+		(at 251.46 104.14)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "74e50e1e-7be1-5de8-bd6b-c26c2fad1ab6")
+	)
+	(junction
+		(at 264.16 104.14)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "53382c36-78df-5759-b2ce-7d7ae7c1247a")
+	)
+	(junction
+		(at 199.39 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "41ec1899-62fa-5131-b8e1-522089a73523")
+	)
+	(junction
+		(at 201.93 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "21ef218f-0ac6-504b-983f-12ccab8c108e")
+	)
+	(junction
+		(at 204.47 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "b2a5bb74-c6e4-58b5-8602-b18d8050ec79")
+	)
+	(junction
+		(at 207.01 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "4f3fb3cc-c9b7-5c75-9697-d40aa56b8679")
+	)
+	(junction
+		(at 209.55 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "2c42398f-26cc-5409-94eb-fa8904cbdc5f")
+	)
+	(junction
+		(at 212.09 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "7d3cdf98-a161-5120-b61f-9c89b802d500")
+	)
+	(junction
+		(at 214.63 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "4946319a-af6e-5fd5-b437-83096df915bf")
+	)
+	(junction
+		(at 217.17 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "3206a893-4fbe-5c38-a172-7972e2b58282")
+	)
+	(junction
+		(at 219.71 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "a25dabd0-4ad4-5fd4-b236-37dc4d6f1af8")
+	)
+	(junction
+		(at 222.25 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "015703e5-9199-5eb2-87c1-78e9fb32f36f")
+	)
+	(junction
+		(at 224.79 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "c261a425-a12d-57fb-b965-0d67ff3b8482")
+	)
+	(junction
+		(at 227.33 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "61f10384-869a-5762-992d-480be030cc12")
+	)
+	(junction
+		(at 229.87 172.72)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "abb48952-b79f-5c90-abd0-72233ba0cfda")
+	)
+	(junction
+		(at 162.56 129.54)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "9e5d61b6-f3b7-53a3-b8fb-d2653e28027a")
+	)
+	(junction
+		(at 134.62 144.78)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "0c957350-f356-50bf-a31c-c8d3307ff121")
+	)
+	(junction
+		(at 119.38 143.51)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "8f59c0b3-57b4-52b3-a9a4-d44799e4b040")
+	)
+	(junction
+		(at 129.54 147.32)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "b42648d9-33b6-5022-a0ba-0d6df48ff109")
+	)
+	(junction
+		(at 116.84 148.59)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "d30ae27c-8733-57ff-b0e1-3ab9899cc9a5")
+	)
+	(junction
+		(at 180.34 154.94)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "8af866d1-29f9-5f60-959e-3d01b4a6bbe8")
+	)
+	(junction
+		(at 142.24 152.4)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "d58e7cfa-fa5c-5273-baaa-c0e439d729d0")
+	)
+	(text "J2: mPCIe socket footprint TBD (XUNPU PCIE-52P52H) + M2 standoff\n(Wuerth 9774030243R, height to check). LoRa antenna is the U.FL on the module.\nC20 DNP: polymer bulk to try on the real board (total <= 68 uF, TPS563201 limit).\nU5 (DNP, fit with the L76K): 1PPS without back-powering the switched rail (I_off).\nR20 keeps pin 19 low without GNSS. R16: SX1302 reset held low (RP2350-E9).\nI2C pull-ups and ATECC608B (DNP) on 3V3_WM: no back-powering."
 		(exclude_from_sim no)
-		(at 124.46 149.86 0)
+		(at 124.46 190.5 0)
 		(effects
 			(font
 				(size 1.27 1.27)
@@ -5091,27 +5005,5 @@
 			(justify left top)
 		)
 		(uuid "39795937-d9fb-5d7a-98b6-51b0e5e57d40")
-	)
-	(text "At the mPCIe 3V3 pins. C20 DNP: polymer bulk to try on the\nreal board (keep total <= 68 uF, TPS563201 limit)."
-		(exclude_from_sim no)
-		(at 228.6 76.2 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left top)
-		)
-		(uuid "f2cfb551-b335-585f-8cd5-8fcd00f2e474")
-	)
-	(text "U5 (DNP, fit with the L76K): 1PPS into the WM1302 without\nback-powering the switched rail (I_off). R20 keeps pin 19 low without GNSS.\nI2C pull-ups and ATECC608B (DNP) on 3V3_WM: no back-powering."
-		(exclude_from_sim no)
-		(at 45.72 205.74 0)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify left top)
-		)
-		(uuid "714c81d0-7628-5576-ba8f-bd00f1e8ba35")
 	)
 )
