@@ -364,7 +364,8 @@ path.
 | Layer | Choice |
 |---|---|
 | Runtime / HAL | Embassy, `embassy-rp` (RP2350) |
-| Ethernet / IP | `embassy-net-wiznet` (W5500 MACRAW) + `embassy-net` (smoltcp) |
+| Ethernet / IP | `embassy-net-wiznet` (W5500 MACRAW) + `embassy-net` (smoltcp), static IPv4 (DHCP optional), see 3.4 |
+| Name resolution | Own resolver: hosts table, then own DNS client over UDP (optional), see 3.4 |
 | TLS | `embedded-tls` 0.19 (TLS 1.3 only), feature `rustpki` (P-256 built in), no `webpki`, no `rsa`; chain-pinning verifier wrapper |
 | MQTT | no_std client, e.g. `rust-mqtt` |
 | Protobuf | `micropb` (no alloc, heapless containers), generated from ChirpStack `api/proto/gw/gw.proto` + `common.proto` |
@@ -508,6 +509,38 @@ JIT queue must reject collisions and too-late frames and report the matching
 `DownlinkTxAck` status. Track airtime per sub-band and enforce EU868 duty cycle
 (important for RX2 869.525 MHz / FUOTA bursts), ack with `DUTY_CYCLE_OVERFLOW`.
 
+### 3.4 Network configuration and name resolution
+
+Target networks have no DHCP and no DNS server, so the network is configured
+statically and broker/NTP names are resolved like with `/etc/hosts` on Linux.
+
+- **IP config**: `net.mode = static` (default) with address/prefix, default
+  gateway and DNS servers from the config store (`embassy_net::Config::ipv4_static`).
+  `net.mode = dhcp` is kept as an option (embassy-net `dhcpv4`, little extra code).
+  If static config is missing or invalid, stay offline and signal it on the LED;
+  provisioning works over USB without a network.
+- **MAC address**: the W5500-EVB-Pico2 has no unique MAC and the board has no MAC
+  EEPROM (dropped for v1: config lives encrypted in flash, rare writes, an external
+EEPROM adds no security and I2C0 is on the switched WM1302 rail). Derive a locally
+  administered unicast MAC from the RP2350 unique chip ID: hash the ID, take 6 bytes,
+  set bit 1 and clear bit 0 of the first byte (`x2:xx:xx:xx:xx:xx`). Stable per Pico,
+  changes if the Pico module is swapped. Optional `net.mac` override in the config.
+- **Keep hostnames for TLS**: `mqtt.host` stays a hostname, because TLS uses it for
+  SNI and the certificate hostname check. A bare IP only works if the broker
+  certificate has an IP SAN. The hosts table overrides only the address lookup.
+- **Resolver order** (like `hosts: files dns`), used by the MQTT and SNTP tasks:
+  1. IP literal: the string parses as IPv4, use it directly.
+  2. Hosts table: case-insensitive exact match, trailing dot ignored.
+  3. DNS, only if servers are configured: servers in order, ~2 s timeout,
+     2 tries each.
+  4. Last known address: if DNS fails, reuse the last successful result (RAM).
+  No match → error, MQTT reconnect backoff, LED pattern "no broker".
+- **DNS client**: small own A-record client over an `embassy-net` `UdpSocket`
+  (build query, parse answer, honour TTL), no allocation, host-testable. Not the
+  smoltcp `DnsSocket`: its server list comes from the IP config (overwritten by
+  DHCP, one server by default), which makes ordered static + DHCP servers awkward.
+  In DHCP mode, DHCP-provided servers are tried after the static ones.
+
 ---
 
 ## 4. Security
@@ -635,11 +668,17 @@ Keep a DNP footprint on the PCB.
 | Key | Example | Notes |
 |---|---|---|
 | `gateway_id` | read from SX1302 EUI | Read-only, register in ChirpStack |
-| `mqtt.host` / `mqtt.port` | `mqtt.example.org` / 8883 | |
+| `net.mode` | `static` | `static` (default) or `dhcp`, see 3.4 |
+| `net.ipv4` | `10.0.0.20/24` | Address + prefix length (static mode) |
+| `net.gateway` | `10.0.0.1` | Default gateway, optional (broker in same subnet) |
+| `net.dns.servers[0..2]` | `10.0.0.1` | Optional; empty = hosts table only |
+| `net.hosts[0..3]` | `mqtt.example.org` → `10.0.0.5` | Name (≤ 63 chars) + IPv4, checked before DNS |
+| `net.mac` | derived from RP2350 chip ID | Optional override |
+| `mqtt.host` / `mqtt.port` | `mqtt.example.org` / 8883 | Hostname, used for SNI + cert check (see 3.4) |
 | `mqtt.topic_prefix` | `eu868` | |
 | `mqtt.username` / `mqtt.password` | gateway ID / random | Encrypted |
 | `tls.ca[0..1]` | DER | Current + next CA |
-| `ntp.servers` | 3 entries | |
+| `ntp.servers` | 3 entries | IP or hostname (resolved via hosts table / DNS) |
 | `radio.region` / channel plan | EU868 8+1+1 | Radio centre freqs, IF offsets |
 | `radio.rssi_offset`, TX gain LUT | from WM1302 reference config | Board-specific |
 | `radio.antenna_gain` | dBi | For EIRP limits |
@@ -653,7 +692,7 @@ Keep a DNP footprint on the PCB.
    LED and buttons, DNP footprints (L76K, PPS buffer, ATECC608B).
 2. Bring-up: SPI to SX1302, read chip version and EUI from Rust.
 3. `sx1302_hal` via `cc` + shim; receive uplinks, print to USB console.
-4. Ethernet + SNTP + TLS + MQTT; publish `UplinkFrame`, `ConnState`, `GatewayStats`.
+4. Ethernet (static IP, derived MAC) + resolver (hosts, DNS) + SNTP + TLS + MQTT; publish `UplinkFrame`, `ConnState`, `GatewayStats`.
 5. JIT queue: Class A delay downlinks + `DownlinkTxAck`.
 6. Class C unicast + Class C multicast (Delay), duty-cycle tracking; FUOTA test.
 7. Config store + encryption, USB provisioning, remote credential change.
