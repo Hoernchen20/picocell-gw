@@ -1,0 +1,26 @@
+[target.'cfg(all(target_arch = "arm", target_os = "none"))']
+# Writes target/.../picocell-gw.uf2; copy it to the RPI-RP2350 drive (BOOTSEL).
+runner = "python3 ../tools/elf2uf2-rp2350.py"
+# With a debug probe instead:
+#runner = "probe-rs run --chip RP235x"
+
+[build]
+target = "thumbv8m.main-none-eabihf"
+
+# Build-time settings until the config store and USB provisioning exist (sketch.md
+# section 7). An environment variable of the same name overrides each value.
+[env]
+# Broker CA certificate (DER), relative to fw/.
+PICOCELL_CA_DER = "../tools/test-broker/out/ca.der"
+# "dhcp" or a static address with prefix, e.g. "10.0.0.20/24".
+PICOCELL_NET = "dhcp"
+# Default gateway for a static address; empty = none.
+PICOCELL_NET_GATEWAY = ""
+# Broker host name: SNI and certificate check.
+PICOCELL_MQTT_HOST = "mqtt.test"
+# Broker IPv4 address (hosts-table entry for PICOCELL_MQTT_HOST, no DNS yet).
+PICOCELL_MQTT_ADDR = "192.168.1.10"
+PICOCELL_MQTT_PORT = "8883"
+# The username is the gateway ID, printed on the USB console at boot.
+PICOCELL_MQTT_PASSWORD = "secret-pw"
+PICOCELL_TOPIC_PREFIX = "eu868"

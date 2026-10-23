@@ -1,0 +1,16 @@
+[package]
+name = "mqtt-host-test"
+publish = false
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rust-mqtt = { version = "=0.6.0", default-features = false, features = ["v5", "bump", "log", "log-level-warn"] }
+embedded-tls = { git = "https://github.com/embassy-rs/embedded-tls", rev = "6487c62bb084c33361822022e21836ddfd48388f", default-features = false, features = ["std", "log", "tokio", "p256", "rustpki"] }
+embassy-crypto-rand = { git = "https://github.com/embassy-rs/embassy", rev = "822a76ea91f2c0885c6eb0c65fe91181e31133e1" }
+embassy-crypto-rustcrypto = { git = "https://github.com/embassy-rs/embassy", rev = "822a76ea91f2c0885c6eb0c65fe91181e31133e1", features = ["embassy-crypto-sha256", "embassy-crypto-hmac-sha256", "embassy-crypto-aes128-gcm", "embassy-crypto-p256-arith", "embassy-crypto-p256-ecdh", "embassy-crypto-p256-ecdsa"] }
+embedded-io-adapters = { version = "0.7", features = ["tokio-1"] }
+embedded-io-async = "0.7"
+tokio = { version = "1", features = ["rt", "net", "time", "macros", "process", "io-util"] }
+log = "0.4"
+env_logger = "0.11"
