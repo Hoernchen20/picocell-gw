@@ -3764,94 +3764,6 @@
 			)
 		)
 	)
-	(global_label "SX1262_CS"
-		(shape passive)
-		(at 187.96 132.08 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "cb03405e-5653-59ff-a120-79ae28fc086b")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 187.96 132.08 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "SX1262_RESET"
-		(shape passive)
-		(at 187.96 134.62 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "0bd95518-d25b-5370-8127-dfa22df1ac16")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 187.96 134.62 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "SX1262_BUSY"
-		(shape passive)
-		(at 187.96 137.16 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "31c923b2-282f-5285-923f-a87e5943e0b5")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 187.96 137.16 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
-	(global_label "SX1262_DIO1"
-		(shape passive)
-		(at 187.96 139.7 180)
-		(fields_autoplaced yes)
-		(effects
-			(font
-				(size 1.27 1.27)
-			)
-			(justify right)
-		)
-		(uuid "7d4f5174-83b8-5fe1-8d34-416767c52bc1")
-		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 187.96 139.7 180)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify right)
-				(hide yes)
-			)
-		)
-	)
 	(global_label "3V3_WM"
 		(shape passive)
 		(at 274.32 104.14 0)
@@ -3984,6 +3896,22 @@
 			)
 		)
 	)
+	(no_connect
+		(at 193.04 132.08)
+		(uuid "54a6d14f-8bcf-445b-9543-79a0c01940ca")
+	)
+	(no_connect
+		(at 193.04 134.62)
+		(uuid "320d8894-99e5-459f-a994-10b622eb21f8")
+	)
+	(no_connect
+		(at 193.04 137.16)
+		(uuid "7f31e901-05b2-4f45-b22f-98e055b29a7b")
+	)
+	(no_connect
+		(at 193.04 139.7)
+		(uuid "578e6100-e7d7-4cfa-8e4f-a49892929579")
+	)
 	(wire
 		(pts
 			(xy 187.96 119.38)
@@ -4027,50 +3955,6 @@
 			(type default)
 		)
 		(uuid "1c489ff1-3d0d-584b-a1bb-261208a903d0")
-	)
-	(wire
-		(pts
-			(xy 187.96 132.08)
-			(xy 193.04 132.08)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "3db56948-6284-5089-9d57-6e9ea6134898")
-	)
-	(wire
-		(pts
-			(xy 187.96 134.62)
-			(xy 193.04 134.62)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "272551c7-3072-5570-82df-c3ff1d49cd8b")
-	)
-	(wire
-		(pts
-			(xy 187.96 137.16)
-			(xy 193.04 137.16)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "853cf25a-3fcd-53f0-ab6d-8d97fc329924")
-	)
-	(wire
-		(pts
-			(xy 187.96 139.7)
-			(xy 193.04 139.7)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "0cf2f434-c2b3-5cc3-a669-40f2b7022e6a")
 	)
 	(wire
 		(pts

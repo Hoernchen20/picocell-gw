@@ -14,7 +14,8 @@ the module).
 
 - Class A uplink/downlink, Class C unicast and Class C multicast (scheduling type
   **Delay**). No Class B for now.
-- EU868, single WM1302 SPI module (SX1302 + 2x SX1250 + SX1262 for LBT/spectral scan).
+- EU868, single WM1302 SPI module (SX1302 + 2x SX1250), variant **without** the SX1262
+  (LBT/spectral scan): LBT is not required in EU868 (ETSI duty cycle applies).
 - Ethernet only (W5500). No PoE in the first board revision.
 - Power: 24 V DC like an industrial PLC (IEC 61131-2 range 19.2–30 V), wide-input
   front end (9–32 V) so 12 V supplies also work. USB power alone runs the whole board
@@ -80,7 +81,6 @@ flowchart LR
     subgraph WM["WM1302 SPI (mPCIe)"]
         V33["3V3 pins"]
         SX1302["SX1302<br/>+ 2× SX1250"]
-        SX1262["SX1262<br/>(LBT / spectral scan)"]
         TEMP["Temp sensor (I2C)"]
         PPS["1PPS (pin 19)"]
     end
@@ -98,13 +98,9 @@ flowchart LR
     V5 --> LDO --> GPS
 
     RP -- "SPI1: SCK GP10 / MOSI GP11 / MISO GP12" --> SX1302
-    RP -- "SPI1 MOSI/MISO/SCK (shared)" --> SX1262
     RP -- "CS GP13" --> SX1302
-    RP -- "CS GP9" --> SX1262
     RP -- "SX1302_RESET GP14" --> SX1302
     RP -- "POWER_EN GP15 (buck EN)" --> BUCK
-    RP -- "SX1262_RESET GP8" --> SX1262
-    SX1262 -- "BUSY GP6 / DIO1 GP7" --> RP
     RP -- "I2C0: SDA GP4 / SCL GP5" --> TEMP
     RP -- "I2C0" --> ATECC
     GPS -- "1PPS" --> PPSBUF --> PPS
@@ -129,25 +125,21 @@ FE terminal (see 2.4).
 | GP11 | SPI1 TX (MOSI) | WM1302 pin 49 SPI_MOSI |
 | GP12 | SPI1 RX (MISO) | WM1302 pin 47 SPI_MISO |
 | GP13 | CS SX1302 | WM1302 pin 51 SX1302_CSN |
-| GP9 | CS SX1262 (GPIO) | WM1302 pin 25 SX1262_CSN |
 | GP14 | SX1302_RESET (active high on SPI version), external pull-down | WM1302 pin 22 RESET |
-| GP8 | SX1262_RESET | WM1302 pin 10 SX1262_RST |
-| GP6 | SX1262_BUSY (input) | WM1302 pin 8 SX1262_BUSY |
-| GP7 | SX1262_DIO1 (input, IRQ) | WM1302 pin 33 SX1262_IO1 |
-| — | SX1262_DIO2 | WM1302 pin 31, leave NC |
 | GP15 | POWER_EN | EN of the WM1302 3.3 V buck (external pull-down, module off at boot) |
 | GP4 / GP5 | I2C0 SDA / SCL | WM1302 pins 32 / 30 (temp sensor), ATECC608B (DNP); 4.7 kΩ pull-ups to the WM1302 3.3 V rail |
 | GP0 / GP1 | UART0 TX / RX | L76K pin 3 RXD / pin 2 TXD (DNP) |
 | GP2 | PPS sense (input) | L76K pin 4 1PPS (DNP), taken before the PPS buffer |
 | GP3 | L76K reset (open-drain: drive low or hi-Z) | L76K pin 9 RESET_N (DNP) |
 | GP22 | Provisioning button (input, active low) | Switch to GND, 10 kΩ pull-up to 3V3, 100 nF |
+| GP6–GP9 | — | Free |
 | GP26 | — | Free (ADC0) |
 | GP27 | Power source (input) | TPS2116 ST (open-drain, low = running on USB VBUS), 10 kΩ pull-up to 3V3 |
 | GP28 | Status LED (output, active high) | LED + series resistor to GND |
 | RUN | Reset button | Switch to GND (RUN has a pull-up on the Pico) |
 | GP16–GP21 | — | W5500 (internal, do not use) |
 
-SPI lines from the Pico (SCK, MOSI, both CS) get 33 Ω series resistors at the Pico
+SPI lines from the Pico (SCK, MOSI, CS) get 33 Ω series resistors at the Pico
 side (edge damping, limits back-feed into the unpowered module). Pressing reset also
 power-cycles the WM1302: GP15 goes hi-Z and the pull-down switches the buck off.
 
@@ -160,6 +152,7 @@ WM1302 mPCIe pins (SPI version, from the Seeed datasheet):
 | 19 | 1PPS (input) | L76K 1PPS through the DNP PPS buffer; 100 kΩ pull-down (fitted) so the pin does not float without GNSS |
 | 14 / 16 | I2C_SCL / I2C_SDA (temp sensor, second pair) | NC (use 30/32) |
 | 36 / 38 | USB_D− / USB_D+ | NC (USB version only) |
+| 8, 10, 25, 31, 33 | SX1262 BUSY / RST / CSN / IO2 / IO1 | NC (SX1262 variant not used) |
 | others | NC | NC |
 
 The module has **no** power-enable pin; the `SX1302_POWER_EN` in Seeed's scripts
