@@ -77,9 +77,10 @@ async fn status_task(stack: Stack<'static>, ids: &'static Ids) -> ! {
     loop {
         let m = ids.mac;
         info!(
-            "gateway id {} | mac {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} | ip {:?}",
+            "gateway id {} | mac {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} | ip {:?} | build {}",
             ids.gateway_id, m[0], m[1], m[2], m[3], m[4], m[5],
-            stack.config_v4().map(|c| c.address)
+            stack.config_v4().map(|c| c.address),
+            config::build_time()
         );
         Timer::after_secs(30).await;
     }

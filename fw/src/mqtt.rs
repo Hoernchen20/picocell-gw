@@ -145,6 +145,13 @@ async fn session(
     // Safety: the CONNACK info borrowing the buffer was dropped.
     unsafe { client.buffer_mut().reset() };
     info!("mqtt: connected to {}", config::MQTT_HOST);
+    // Uplinks are not buffered across outages (sketch.md section 6): their RX windows
+    // have passed, so drop whatever queued up while disconnected.
+    let stale = UPLINKS.len();
+    UPLINKS.clear();
+    if stale > 0 {
+        info!("mqtt: dropped {stale} queued uplinks");
+    }
 
     let up = name(&up_topic);
     let ok = client
