@@ -400,7 +400,11 @@ Decisions and reasons:
     8.5 KB ≈ 12.5 KB (host sizes, 64-bit). The test chain is ~0.9 KB DER, so
     `CERT_SIZE` 2048 is enough.
   - If the clock is unknown (`TlsClock::now()` returns `None`), `rustpki` skips the
-    validity check; this ties into the time policy in section 6.
+    validity check; the wrapper verifier must reject in that case (fail closed, see
+    section 6).
+- **MQTT**: `rumqttc` rejected: it needs `std` and `tokio`. Candidates are no_std
+  clients that run on `embassy-net` + `embedded-tls`, e.g. `rust-mqtt`; still to be
+  tested (see section 9).
 - **Protobuf (`micropb`)**: no allocator in the whole firmware, bounded memory per
   message. `prost` would need `alloc` only for this; rejected. Generation tested
   with `micropb-gen` 0.6 + vendored `protoc` (`protoc-bin-vendored`, no system
@@ -652,7 +656,12 @@ Keep a DNP footprint on the PCB.
   - Active antenna: powered from VDD_RF (= VCC) through 68 nH + 0 Ω into RF_IN, DC
     block 100 pF, ESD diode at the connector, π-match footprint (0 Ω, 2× NM).
     Antenna total gain < 17 dB, NF < 1.5 dB. Passive antenna only if cable < 1 m.
-- Policy to decide: behaviour when time sync fails (refuse TLS vs. skip date check).
+- Time sync failure: fail closed. The certificate check must fail when the time is
+  unknown, so the MQTT task waits for a valid SNTP result before connecting, and the
+  verifier wrapper (see 3.1) rejects the chain when `TlsClock::now()` returns `None`
+  (`rustpki` would otherwise skip the validity check). No SNTP → no broker
+  connection, LED pattern "no broker"; uplinks are not buffered meanwhile. SNTP is
+  UDP and does not depend on TLS, so there is no circular dependency.
 
 ---
 
@@ -692,6 +701,39 @@ Keep a DNP footprint on the PCB.
 8. Secure boot, OTP key, signed A/B OTA, CA rotation.
 
 ## 9. Open points
+
+### 9.1 Firmware
+
+- MQTT client: test `rust-mqtt` (or another no_std client) on top of `embedded-tls`
+  over an `embassy-net` TCP socket (matching `embedded-io-async` versions); needs
+  Last Will + retained (`state/conn`), QoS 1, reconnect handling. Decide MQTT 5 vs.
+  3.1.1 (Mosquitto supports both).
+- `sx1302_hal` port: choose upstream Lora-net 2.1.0 vs. Seeed fork; replace
+  `loragw_spi` / `loragw_i2c` / `loragw_com` (spidev / i2c-dev ioctls),
+  `wait_ms` / `clock_gettime`, `printf` / `fopen`; choose the C library
+  (newlib-nano or picolibc); check flash size incl. the AGC/ARB firmware arrays;
+  temp sensor driver and its I2C address on the WM1302. Can be cross-compiled
+  against stub drivers before the module arrives.
+- JIT queue (own implementation, the HAL has none): 32-bit `count_us` wrap
+  (~71 min), mapping "Immediately" to a timestamped TX with margin (as Concentratord
+  does), `context` encoding in uplinks so ChirpStack echoes it back, collision and
+  too-late checks.
+- Duty-cycle model: ETSI EN 300 220 sub-bands and limits, window length, how
+  FUOTA bursts on 869.525 MHz are handled.
+- Radio calibration: extract `rssi_offset` and the TX gain LUT from Seeed's
+  `global_conf.json.sx1250.EU868`; define the TX power cap on USB power (or no TX).
+- USB console protocol: command syntax, entering secrets, uploading a CA (DER).
+- Config schema: key layout in `sequential-storage`, schema version and migration,
+  defaults.
+- Dev vs. production flow: OTP writes (boot key hash, AES key, SWD disable) are
+  irreversible; define a dev build that runs unsigned, without the OTP key and with
+  SWD enabled, so dev boards are not locked by accident.
+- LED blink patterns for the states listed in 2.4.
+- Stats interval and contents; whether to support `command/config`.
+- Watchdog timeout and which tasks feed it; whether to use the second core.
+- Placeholder gateway ID until the SX1302 EUI can be read.
+
+### 9.2 Hardware and verification
 
 - Look up LCSC numbers and stock for the new parts (3-pin terminal, TPS2116, SN74LVC1G17,
   LED, buttons).
