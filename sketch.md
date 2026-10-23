@@ -359,8 +359,8 @@ path.
 | Runtime / HAL | Embassy, `embassy-rp` (RP2350) |
 | Ethernet / IP | `embassy-net-wiznet` (W5500 MACRAW) + `embassy-net` (smoltcp), static IPv4 (DHCP optional), see 3.4 |
 | Name resolution | Own resolver: hosts table, then own DNS client over UDP (optional), see 3.4 |
-| TLS | `embedded-tls` 0.19 (TLS 1.3 only), feature `rustpki` (P-256 built in), no `webpki`, no `rsa`; chain-pinning verifier wrapper |
-| MQTT | no_std client, e.g. `rust-mqtt` |
+| TLS | `embedded-tls` git `main` pinned to rev `6487c62` (TLS 1.3 only, **not** 0.19.0, see below), features `p256` + `rustpki`; crypto via `embassy-crypto` (git) with `embassy-crypto-rustcrypto`, own RNG driver on the RP2350 TRNG; fail-closed clock wrapper around the verifier |
+| MQTT | `rust-mqtt` 0.6 (MQTT 5, no_std, no alloc with `bump` feature) |
 | Protobuf | `micropb` (no alloc, heapless containers), generated from ChirpStack `api/proto/gw/gw.proto` + `common.proto` |
 | Concentrator | Semtech `sx1302_hal` (C) built via `cc`, with a Rust shim for SPI/I2C/delays. Later optionally ported to Rust |
 | Config storage | `sequential-storage` KV in a flash partition, AES-GCM encrypted |
@@ -376,35 +376,66 @@ Decisions and reasons:
   **ECDSA P-256** key: RSA verification needs the `rsa` crate and a global
   allocator, P-256 does not. RP2350 has a SHA-256 accelerator and TRNG; AES-GCM and
   P-256 run in software (handshake time still to be measured on the RP2350).
-  Results from a host test against Mosquitto 2.0.11 / OpenSSL 3.0 (P-256 root →
-  intermediate → broker certificate, TLS 1.3 only):
-  - `webpki` verifier rejected: it pulls in `ring` → `getrandom`, which does not
-    build for `thumbv8m.main-none-eabihf`, and it ignores intermediates (end entity
-    checked directly against the root). The `rustpki` verifier (`pki::CertVerifier`)
-    builds no_std without alloc and walks the chain root → intermediate → leaf
-    (signatures, validity dates, hostname via SAN/CN, max. 3 SANs of 64 chars).
-  - `rustpki` does **not** check `basicConstraints` / key usage: a certificate
-    signed by any ordinary (CA:FALSE) leaf from the same CA was accepted. Fix: a
-    small wrapper verifier that only accepts `[leaf]` or `[leaf, pinned
-    intermediate]` (optionally followed by the root itself) and then delegates to
-    `pki::CertVerifier`; it rejected the forged chain in the test. In addition,
-    use a dedicated CA for the broker only. Reporting the missing check upstream
-    is worthwhile.
-  - Negative tests passed: wrong hostname, unknown root, forged chain → all
-    `InvalidCertificate`.
-  - Record buffers: with `with_max_fragment_length(Bits12)` (4096 B, honoured by
-    OpenSSL) 2 × 4352 B buffers carried a 10 KB broker → device message; without
-    MFL the same 4 KB buffers failed with `InsufficientSpace`. So use MFL 4096 and
-    2 × 4352 B instead of 2 × 16 KB.
-  - RAM: `TlsConnection` 1.3 KB + verifier with `CERT_SIZE` 2048 2.6 KB + buffers
-    8.5 KB ≈ 12.5 KB (host sizes, 64-bit). The test chain is ~0.9 KB DER, so
-    `CERT_SIZE` 2048 is enough.
+  - **Do not use the 0.19.0 release** (checked 2026-10-23): it accepts a server
+    `Finished` without `Certificate` / `CertificateVerify`, so an on-path attacker
+    completes the handshake with any verifier (upstream issue #215, fixed on `main`
+    2026-10-20, not released). Its async record read is also not cancel-safe
+    (partial record header lost when a `select!` drops the read, fixed on `main`
+    2026-09-09). Pin `main` to a reviewed rev until a release after 0.19.0 exists.
+  - Verifier on `main`: `rustpki` (`pki::CertVerifier`) accepts **only a broker
+    certificate signed directly by the trusted root** and ignores the rest of the
+    chain (a chain through an intermediate needs the `webpki` verifier). So: a
+    dedicated P-256 root CA for the broker only, signing the broker certificate
+    directly, no intermediate. This also removes the old `basicConstraints` problem
+    (0.19.0 accepted a chain signed by an ordinary CA:FALSE leaf) and the
+    chain-pinning wrapper. `webpki` on `main` now builds no_std via
+    `rustls-webpki` 0.103 + `embassy-crypto` but is not needed.
+  - Checks: validity dates, signature by the root, hostname via SAN/CN (max. 3 SANs
+    of 64 chars), `CertificateVerify`.
   - If the clock is unknown (`TlsClock::now()` returns `None`), `rustpki` skips the
-    validity check; the wrapper verifier must reject in that case (fail closed, see
+    validity check; a small wrapper verifier rejects in that case (fail closed, see
     section 6).
-- **MQTT**: `rumqttc` rejected: it needs `std` and `tokio`. Candidates are no_std
-  clients that run on `embassy-net` + `embedded-tls`, e.g. `rust-mqtt`; still to be
-  tested (see section 9).
+  - Crypto on `main` goes through `embassy-crypto` drivers resolved at link time:
+    `embassy-crypto-rustcrypto` (SHA-256, HMAC, AES-128-GCM, P-256) plus an RNG
+    driver. Released `embassy-rp` 0.10 has no `embassy-crypto-rng` feature (git
+    `main` has it), so the firmware registers its own ~15-line driver on the TRNG
+    (`embassy_crypto::rng_impl!`). Keep the rest of Embassy on the crates.io
+    releases: Embassy git `main` replaced smoltcp in `embassy-net` with a new stack.
+  - Record buffers: read buffer 16640 B (one full TLS record), write buffer 4352 B
+    (records the device sends are split to fit). `max_fragment_length` (4096) with
+    a 4352 B read buffer also works with OpenSSL/Mosquitto, but depends on the
+    broker (or a TLS proxy in front of it) honouring the extension; RAM is not
+    tight, so the full-size read buffer is used instead. Size: `TlsConnection`
+    0.6 KB + verifier (`CERT_SIZE` 2048) 2.6 KB + buffers 20.5 KB ≈ 24 KB.
+- **MQTT (`rust-mqtt` 0.6)**: `rumqttc` rejected (needs `std` + `tokio`).
+  `rust-mqtt` is MQTT 5 only (fine with Mosquitto ≥ 1.6), uses `embedded-io-async`
+  0.7 like `embedded-tls` and `embassy-net` 0.9, and needs no allocator with the
+  `bump` feature. Tested 2026-10-23 on the host against Mosquitto 2.0.11 (TLS 1.3,
+  P-256 root → broker certificate, password file, ACL from 4.1), all passed:
+  - Refused: unknown CA, wrong hostname, unknown time (fail closed), wrong password
+    (`NotAuthorized`).
+  - Retained `state/conn` ONLINE (QoS 1) and a retained Last Will OFFLINE, which the
+    broker publishes when the TCP connection drops without DISCONNECT.
+  - Subscribe `command/down` QoS 1; 1 KB and 10 KB downlinks received intact; a
+    20 KB downlink above the client's `maximum_packet_size` (12 KB) is not
+    delivered by the broker.
+  - Uplinks QoS 0 / 1 with PUBACK; publishing to another gateway's topic is
+    refused by the ACL (PUBACK `NotAuthorized`).
+  - Full duplex in one task: `select!` of `poll_header()` against queued uplinks
+    and a ping ticker. 300 × 1.5 KB downlinks during 236 uplinks; with a transport
+    that returns 1–3 bytes per read, so most cancellations hit mid-record. With the
+    record-header fix removed (0.19.0 behaviour) the same test breaks the
+    connection on the first cancelled read.
+  - Usage rules from this: only `poll_header()` is cancel-safe, so select on it and
+    then run `poll_body()` to completion; never wrap `poll()` in a timeout, use the
+    TCP socket timeout instead. Keepalive pings are the application's job.
+    `BumpBuffer` needs an `unsafe` `reset()` after each event is dropped. One topic
+    per SUBSCRIBE. `abort()` refuses on a healthy connection; drop the transport
+    or `disconnect()` instead.
+  - Cross-build for the RP2350 (`embassy-rp` 0.10, `embassy-net-wiznet` 0.3,
+    `embassy-net` 0.9.1, TLS, MQTT, own TRNG driver, defmt, `opt-level = "s"`,
+    LTO): `.text` + `.rodata` 215 KB, `.bss` 68 KB including 25 KB of TCP/TLS/MQTT
+    buffers (before the full-size TLS read buffer, +12 KB).
 - **Protobuf (`micropb`)**: no allocator in the whole firmware, bounded memory per
   message. `prost` would need `alloc` only for this; rejected. Generation tested
   with `micropb-gen` 0.6 + vendored `protoc` (`protoc-bin-vendored`, no system
@@ -546,8 +577,9 @@ EEPROM adds no security and I2C0 is on the switched WM1302 rail). Derive a local
 
 - TLS 1.3 to the broker; device verifies the broker certificate against a stored CA
   and checks the hostname (SNI). Mosquitto must allow TLS 1.3.
-- Dedicated P-256 CA for the broker certificate only; the device accepts only the
-  pinned chain shape (see 3.1, TLS). The broker certificate has ≤ 3 SANs.
+- Dedicated P-256 root CA for the broker certificate only, signing it directly (no
+  intermediate: the `rustpki` verifier only accepts a root-signed broker
+  certificate, see 3.1, TLS). The broker certificate has ≤ 3 SANs.
 - Per-gateway username (= gateway ID) and unique password.
 - Mosquitto ACL (dynamic-security plugin or acl_file), least privilege:
 
@@ -601,8 +633,8 @@ Keep a DNP footprint on the PCB.
 ### 5.3 CA certificate rotation
 
 - Trust store with multiple slots ("current" + "next"); roll out new CA long before
-  switching the broker. A pinned intermediate rotates the same way (slot per CA
-  holds root + optional intermediate).
+  switching the broker. Each slot holds one root that signs the broker
+  certificate directly.
 - New CA only via signed firmware or signed config message, never accepted unsigned
   over MQTT.
 - If the CA expired before rotation: USB recovery.
@@ -704,10 +736,10 @@ Keep a DNP footprint on the PCB.
 
 ### 9.1 Firmware
 
-- MQTT client: test `rust-mqtt` (or another no_std client) on top of `embedded-tls`
-  over an `embassy-net` TCP socket (matching `embedded-io-async` versions); needs
-  Last Will + retained (`state/conn`), QoS 1, reconnect handling. Decide MQTT 5 vs.
-  3.1.1 (Mosquitto supports both).
+- `embedded-tls`: move from the pinned git rev to the first release after 0.19.0
+  once it is out; review upstream changes before bumping the rev.
+- MQTT reconnect handling (backoff, re-subscribe, ONLINE republish) and running the
+  `rust-mqtt` + TLS stack on the W5500-EVB-Pico2 against a real broker.
 - `sx1302_hal` port: choose upstream Lora-net 2.1.0 vs. Seeed fork; replace
   `loragw_spi` / `loragw_i2c` / `loragw_com` (spidev / i2c-dev ioctls),
   `wait_ms` / `clock_gettime`, `printf` / `fopen`; choose the C library
@@ -731,7 +763,10 @@ Keep a DNP footprint on the PCB.
 - LED blink patterns for the states listed in 2.4.
 - Stats interval and contents; whether to support `command/config`.
 - Watchdog timeout and which tasks feed it; whether to use the second core.
-- Placeholder gateway ID until the SX1302 EUI can be read.
+- Gateway ID: `fw/` uses the RP2350 chip ID as placeholder EUI-64 until the SX1302
+  EUI can be read; switch over then (re-register the boards in ChirpStack).
+- SNTP client: `fw/` uses the build time as clock for now, so the fail-closed path
+  (section 6) is not active yet.
 
 ### 9.2 Hardware and verification
 
@@ -758,6 +793,5 @@ Keep a DNP footprint on the PCB.
 - Read the leakage of the Eaton PHVL-3R9H474-R from its datasheet (≤ 2 µA wanted);
   measure backup current.
 - Measure the TLS handshake time on the RP2350 (P-256 in software); confirm RAM.
-- Report the missing `basicConstraints` check to `embedded-tls`.
 - Implement the `flash_op`-based read driver for the inactive slot and the config
   partition; test TBYB update, `explicit_buy` and roll-back on hardware.
