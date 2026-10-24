@@ -1,7 +1,7 @@
 //! MQTT task: TCP → TLS → MQTT 5 session with ChirpStack's topics (sketch.md section 3.3).
 //!
-//! One task owns the connection and selects between incoming packets, queued uplinks,
-//! stats and keepalive pings. Only `poll_header()` is cancel-safe, so it is the one that
+//! One task owns the connection and selects between incoming packets (downlinks, each
+//! answered with a `DownlinkTxAck`), queued uplinks, stats and keepalive pings. Only `poll_header()` is cancel-safe, so it is the one that
 //! sits in the select; `poll_body()` always runs to completion.
 
 use core::fmt::Write;
@@ -27,7 +27,7 @@ use rust_mqtt::types::{MqttBinary, MqttString, TopicFilter, TopicName};
 use wire::time::Utc;
 
 use crate::tls::{FailClosed, Suite};
-use crate::{clock, config, resolve};
+use crate::{clock, config, downlink, resolve};
 
 const KEEP_ALIVE_S: u16 = 30;
 const MAX_PACKET: u32 = 8192;
@@ -129,6 +129,7 @@ async fn session(
     let state_topic = topic(gateway_id, "state/conn");
     let up_topic = topic(gateway_id, "event/up");
     let stats_topic = topic(gateway_id, "event/stats");
+    let ack_topic = topic(gateway_id, "event/ack");
     let down_topic = topic(gateway_id, "command/down");
 
     let mut socket = TcpSocket::new(stack, &mut bufs.tcp_rx, &mut bufs.tcp_tx);
@@ -196,6 +197,7 @@ async fn session(
     }
 
     let stats_options = PublicationOptions::new(TopicReference::Name(name(&stats_topic)));
+    let ack_options = PublicationOptions::new(TopicReference::Name(name(&ack_topic)));
     let mut buf = [0u8; 512];
     // Right away, so ChirpStack shows the gateway online without waiting an interval.
     let n = stats(gateway_id, &mut buf);
@@ -209,18 +211,23 @@ async fn session(
     loop {
         match select4(client.poll_header(), UPLINKS.receive(), ping.next(), stats_ticker.next()).await {
             Either4::First(Ok(header)) => {
-                match client.poll_body(header).await {
-                    Ok(Event::Publish(p)) => {
-                        info!("mqtt: downlink {} B", p.message.as_ref().len())
-                    }
-                    Ok(_) => {}
+                // Only command/down is subscribed.
+                let ack = match client.poll_body(header).await {
+                    Ok(Event::Publish(p)) => downlink::handle(gateway_id, p.message.as_ref(), &mut buf),
+                    Ok(_) => None,
                     Err(e) => {
                         warn!("mqtt: {e:?}");
                         break;
                     }
-                }
+                };
                 // Safety: the event borrowing the buffer was dropped.
                 unsafe { client.buffer_mut().reset() };
+                if let Some(n) = ack
+                    && let Err(e) = client.publish(&ack_options, buf[..n].into()).await
+                {
+                    warn!("mqtt: ack: {e:?}");
+                    break;
+                }
             }
             Either4::First(Err(e)) => {
                 warn!("mqtt: {e:?}");
@@ -252,13 +259,15 @@ async fn session(
     Ok(())
 }
 
-/// Encodes a `GatewayStats` message into `buf`. The counters stay zero until there is
-/// a radio.
+/// Encodes a `GatewayStats` message into `buf`. The RX counters stay zero until there
+/// is a radio.
 fn stats(gateway_id: &str, buf: &mut [u8]) -> usize {
     let mut build = heapless::String::<32>::new();
     let _ = write!(build, "{}", Utc(config::build_time()));
     let metadata = [("firmware", env!("CARGO_PKG_VERSION")), ("build", build.as_str())];
     // The session only runs once the clock is set.
     let time_us = clock::now_unix_us().unwrap_or(0);
-    chirpstack::gateway_stats(gateway_id, time_us, &Default::default(), &metadata, buf).unwrap_or(0)
+    let (tx_received, tx_emitted) = downlink::take_counters();
+    let counters = chirpstack::Counters { tx_received, tx_emitted, ..Default::default() };
+    chirpstack::gateway_stats(gateway_id, time_us, &counters, &metadata, buf).unwrap_or(0)
 }

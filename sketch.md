@@ -774,6 +774,16 @@ Keep a DNP footprint on the PCB.
   and `GatewayStats` (counters still zero, metadata `firmware`/`build`) published,
   checked against `protoc --decode` in host tests and on hardware (incl. Last Will
   OFFLINE). +10 KB text.
+- JIT queue: `fw/jit` (host-tested), modelled on the Lora-net `jitqueue.c`: 8
+  frames sorted by `count_us`, wrap-safe offsets, too late below 42.5 ms lead (40 ms
+  + start delay 1.5 ms + margin 1 ms), too early beyond 60 s, collision with start
+  delay and 1 ms margins around each frame's airtime, "Immediately" in the first free
+  slot. The radio task takes a frame 30 ms before its start. `DownlinkFrame` items are
+  tried in order, the first accepted one is OK and the rest IGNORED; GPS epoch →
+  `GPS_UNLOCKED`, non-LoRa or other code rates → `INTERNAL_ERROR`, outside
+  863–870 MHz → `TX_FREQ`, above 27 dBm → `TX_POWER`. Until the radio is there, the
+  RP2350 timer stands in for the SX1302 counter and frames are logged at their start;
+  `tools/test-downlink.sh` answers a test uplink like a Class A downlink.
 
 ### 9.2 Hardware and verification
 

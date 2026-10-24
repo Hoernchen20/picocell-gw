@@ -1,5 +1,5 @@
-//! ChirpStack gateway messages (sketch.md section 3.3), generated with micropb, and
-//! encoders for the ones the gateway publishes.
+//! ChirpStack gateway messages (sketch.md section 3.3), generated with micropb, with
+//! encoders for the ones the gateway publishes and a decoder for downlinks.
 
 #![no_std]
 
@@ -13,7 +13,7 @@ pub use generated::google_::protobuf_ as protobuf;
 pub use generated::gw_ as gw;
 
 use heapless::{String, Vec};
-use micropb::{MessageEncode, PbEncoder};
+use micropb::{MessageDecode, MessageEncode, PbEncoder};
 
 /// `buf` is too small or a string or byte field exceeds its capacity.
 #[derive(Debug, PartialEq)]
@@ -25,6 +25,16 @@ pub fn encode<M: MessageEncode>(msg: &M, buf: &mut [u8]) -> Result<usize, Overfl
     let mut rest = &mut buf[..];
     msg.encode(&mut PbEncoder::new(&mut rest)).map_err(|_| Overflow)?;
     Ok(total - rest.len())
+}
+
+/// Not a valid message, or a string or byte field exceeds its capacity.
+#[derive(Debug, PartialEq)]
+pub struct Malformed;
+
+pub fn decode<M: MessageDecode + Default>(bytes: &[u8]) -> Result<M, Malformed> {
+    let mut msg = M::default();
+    msg.decode_from_bytes(bytes).map_err(|_| Malformed)?;
+    Ok(msg)
 }
 
 fn string<const N: usize>(s: &str) -> Result<String<N>, Overflow> {
@@ -129,6 +139,102 @@ pub fn gateway_stats(
     encode(&stats, buf)
 }
 
+/// When a downlink item is to be sent.
+#[derive(Debug, PartialEq)]
+pub enum Timing {
+    Immediately,
+    /// `delay_us` after the SX1302 counter value from the uplink context.
+    Delay { count_us: u32, delay_us: u32 },
+    GpsEpoch,
+}
+
+/// A downlink item the gateway cannot send, for logs.
+#[derive(Debug, PartialEq)]
+pub enum Unsupported {
+    /// FSK, LR-FHSS or none.
+    Modulation,
+    CodeRate,
+    /// No timing given.
+    Timing,
+    /// Not 4 bytes, so not from one of our uplinks.
+    Context,
+    /// Negative or longer than `u32` µs.
+    Delay,
+}
+
+/// The parameters of one LoRa downlink item.
+#[derive(Debug, PartialEq)]
+pub struct LoraTx<'a> {
+    pub frequency: u32,
+    pub power: i32,
+    pub bandwidth: u32,
+    pub spreading_factor: u32,
+    /// 1–4 for 4/5–4/8.
+    pub code_rate: u32,
+    pub invert_polarity: bool,
+    pub preamble: u32,
+    pub crc: bool,
+    pub timing: Timing,
+    pub payload: &'a [u8],
+}
+
+pub fn lora_tx(item: &gw::DownlinkFrameItem) -> Result<LoraTx<'_>, Unsupported> {
+    let tx = item.tx_info().ok_or(Unsupported::Modulation)?;
+    let Some(gw::Modulation_::Parameters::Lora(lora)) =
+        tx.modulation().and_then(|m| m.parameters.as_ref())
+    else {
+        return Err(Unsupported::Modulation);
+    };
+    let code_rate = match lora.code_rate {
+        gw::CodeRate::Cr45 => 1,
+        gw::CodeRate::Cr46 => 2,
+        gw::CodeRate::Cr47 => 3,
+        gw::CodeRate::Cr48 => 4,
+        _ => return Err(Unsupported::CodeRate),
+    };
+    let timing = match tx.timing().and_then(|t| t.parameters.as_ref()) {
+        None => return Err(Unsupported::Timing),
+        Some(gw::Timing_::Parameters::Immediately(_)) => Timing::Immediately,
+        Some(gw::Timing_::Parameters::GpsEpoch(_)) => Timing::GpsEpoch,
+        Some(gw::Timing_::Parameters::Delay(d)) => {
+            let context: [u8; 4] = tx.context.as_slice().try_into().map_err(|_| Unsupported::Context)?;
+            let d = d.delay().copied().unwrap_or_default();
+            let us = d.seconds.checked_mul(1_000_000).and_then(|s| s.checked_add(i64::from(d.nanos / 1000)));
+            Timing::Delay {
+                count_us: u32::from_be_bytes(context),
+                delay_us: us.and_then(|us| u32::try_from(us).ok()).ok_or(Unsupported::Delay)?,
+            }
+        }
+    };
+    Ok(LoraTx {
+        frequency: tx.frequency,
+        power: tx.power,
+        bandwidth: lora.bandwidth,
+        spreading_factor: lora.spreading_factor,
+        code_rate,
+        invert_polarity: lora.polarization_inversion,
+        // ChirpStack leaves it unset; LoRaWAN uses 8 symbols.
+        preamble: if lora.preamble == 0 { 8 } else { lora.preamble },
+        crc: !lora.no_crc,
+        timing,
+        payload: &item.phy_payload,
+    })
+}
+
+/// `statuses` has one entry per item of the `DownlinkFrame`, in the same order.
+pub fn tx_ack(
+    gateway_id: &str,
+    downlink_id: u32,
+    statuses: &[gw::TxAckStatus],
+    buf: &mut [u8],
+) -> Result<usize, Overflow> {
+    let mut ack = gw::DownlinkTxAck { gateway_id: string(gateway_id)?, downlink_id, ..Default::default() };
+    for status in statuses {
+        ack.items.push(gw::DownlinkTxAckItem { status: *status }).map_err(|_| Overflow)?;
+    }
+    encode(&ack, buf)
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -137,12 +243,12 @@ mod tests {
     use std::process::{Command, Stdio};
     use std::string::String;
 
-    /// Decodes with the reference implementation: `protoc --decode`.
-    fn protoc_decode(msg_type: &str, bytes: &[u8]) -> String {
+    /// Runs `protoc --decode` or `--encode` (the reference implementation) on `input`.
+    fn protoc(mode: &str, msg_type: &str, input: &[u8]) -> std::vec::Vec<u8> {
         let proto = concat!(env!("CARGO_MANIFEST_DIR"), "/proto");
         let include = protoc_bin_vendored::include_path().unwrap();
         let mut child = Command::new(protoc_bin_vendored::protoc_bin_path().unwrap())
-            .arg(std::format!("--decode={msg_type}"))
+            .arg(std::format!("--{mode}={msg_type}"))
             .arg(std::format!("-I{proto}"))
             .arg(std::format!("-I{}", include.display()))
             .arg("gw/gw.proto")
@@ -151,10 +257,14 @@ mod tests {
             .stderr(Stdio::piped())
             .spawn()
             .unwrap();
-        child.stdin.take().unwrap().write_all(bytes).unwrap();
+        child.stdin.take().unwrap().write_all(input).unwrap();
         let out = child.wait_with_output().unwrap();
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-        String::from_utf8(out.stdout).unwrap()
+        out.stdout
+    }
+
+    fn protoc_decode(msg_type: &str, bytes: &[u8]) -> String {
+        String::from_utf8(protoc("decode", msg_type, bytes)).unwrap()
     }
 
     /// Normalises protoc's text format to one `key: value` / `key {` / `}` per line.
@@ -242,6 +352,96 @@ mod tests {
             "metadata {",
             "key: \"firmware\"",
             "value: \"0.1.0\"",
+            "}",
+            "gateway_id: \"0016c001ff10a235\"",
+        ]);
+    }
+
+    /// A Class A downlink as ChirpStack sends it: RX1 and RX2, delay timing.
+    const DOWNLINK: &str = r#"
+        downlink_id: 4242
+        gateway_id: "0016c001ff10a235"
+        items {
+          phy_payload: "\140\001\002"
+          tx_info {
+            frequency: 868100000
+            power: 14
+            modulation { lora { bandwidth: 125000 spreading_factor: 7 code_rate: CR_4_5 polarization_inversion: true } }
+            timing { delay { delay { seconds: 1 } } }
+            context: "\001\002\003\004"
+          }
+        }
+        items {
+          phy_payload: "\140\001\002"
+          tx_info {
+            frequency: 869525000
+            power: 27
+            modulation { lora { bandwidth: 125000 spreading_factor: 12 code_rate: CR_4_5 polarization_inversion: true no_crc: true preamble: 10 } }
+            timing { delay { delay { seconds: 2 nanos: 500000 } } }
+            context: "\001\002\003\004"
+          }
+        }
+    "#;
+
+    #[test]
+    fn downlink_frame_interop() {
+        let bytes = protoc("encode", "gw.DownlinkFrame", DOWNLINK.as_bytes());
+        let frame: gw::DownlinkFrame = decode(&bytes).unwrap();
+        assert_eq!(frame.downlink_id, 4242);
+        assert_eq!(frame.gateway_id.as_str(), ID);
+        assert_eq!(frame.items.len(), 2);
+        assert_eq!(lora_tx(&frame.items[0]), Ok(LoraTx {
+            frequency: 868_100_000,
+            power: 14,
+            bandwidth: 125_000,
+            spreading_factor: 7,
+            code_rate: 1,
+            invert_polarity: true,
+            preamble: 8,
+            crc: true,
+            timing: Timing::Delay { count_us: 0x0102_0304, delay_us: 1_000_000 },
+            payload: &[0x60, 1, 2],
+        }));
+        let rx2 = lora_tx(&frame.items[1]).unwrap();
+        assert_eq!((rx2.spreading_factor, rx2.preamble, rx2.crc), (12, 10, false));
+        assert_eq!(rx2.timing, Timing::Delay { count_us: 0x0102_0304, delay_us: 2_000_500 });
+    }
+
+    #[test]
+    fn downlink_unsupported() {
+        let item = |tx_info: &str| {
+            let text = std::format!("items {{ tx_info {{ {tx_info} }} }}");
+            let frame: gw::DownlinkFrame = decode(&protoc("encode", "gw.DownlinkFrame", text.as_bytes())).unwrap();
+            frame.items[0].clone()
+        };
+        let lora = "modulation { lora { bandwidth: 125000 spreading_factor: 7 code_rate: CR_4_5 } }";
+        assert_eq!(lora_tx(&item("modulation { fsk { datarate: 50000 } }")).err(), Some(Unsupported::Modulation));
+        assert_eq!(lora_tx(&item(lora)).err(), Some(Unsupported::Timing));
+        let t = std::format!("{lora} timing {{ immediately {{}} }}");
+        assert_eq!(lora_tx(&item(&t)).unwrap().timing, Timing::Immediately);
+        let t = std::format!("{lora} timing {{ gps_epoch {{}} }}");
+        assert_eq!(lora_tx(&item(&t)).unwrap().timing, Timing::GpsEpoch);
+        let t = std::format!("{lora} timing {{ delay {{ delay {{ seconds: 1 }} }} }} context: \"\\001\"");
+        assert_eq!(lora_tx(&item(&t)).err(), Some(Unsupported::Context));
+        let t = std::format!("{lora} timing {{ delay {{ delay {{ seconds: -1 }} }} }} context: \"abcd\"");
+        assert_eq!(lora_tx(&item(&t)).err(), Some(Unsupported::Delay));
+        let t = "modulation { lora { code_rate: CR_LI_4_6 } } timing { immediately {} }";
+        assert_eq!(lora_tx(&item(t)).err(), Some(Unsupported::CodeRate));
+        assert_eq!(decode::<gw::DownlinkFrame>(&[0xff, 0xff]).err(), Some(Malformed));
+    }
+
+    #[test]
+    fn tx_ack_interop() {
+        let mut buf = [0u8; 128];
+        let statuses = [gw::TxAckStatus::TooLate, gw::TxAckStatus::Ok];
+        let n = tx_ack(ID, 4242, &statuses, &mut buf).unwrap();
+        assert_eq!(lines(&protoc_decode("gw.DownlinkTxAck", &buf[..n])), [
+            "downlink_id: 4242",
+            "items {",
+            "status: TOO_LATE",
+            "}",
+            "items {",
+            "status: OK",
             "}",
             "gateway_id: \"0016c001ff10a235\"",
         ]);

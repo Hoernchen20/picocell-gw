@@ -4,9 +4,12 @@ Rust/Embassy firmware for the W5500-EVB-Pico2 (RP2350). Design: [../sketch.md](.
 
 Current state: Ethernet (DHCP or static IPv4), hosts table + DNS, SNTP, TLS 1.3 +
 MQTT 5 to the broker with ChirpStack protobuf messages: retained `ConnState` with Last
-Will, `GatewayStats` every 30 s (counters zero), `command/down` subscription and a
-test `UplinkFrame` every 10 s (proprietary frame, made-up radio metadata). No radio,
-config store or provisioning yet; settings are build-time values in
+Will, `GatewayStats` every 30 s (RX counters zero), a test `UplinkFrame` every 10 s
+(proprietary frame, made-up radio metadata), and `DownlinkFrame`s from `command/down`
+scheduled in the JIT queue and answered with a `DownlinkTxAck` on `event/ack`. No
+radio yet: a downlink is logged on the console at its start time instead of sent, and
+the RP2350 timer stands in for the SX1302 counter. No config store or provisioning
+yet; settings are build-time values in
 [.cargo/config.toml](.cargo/config.toml).
 
 ## Requirements
@@ -79,6 +82,22 @@ mosquitto_sub -h 127.0.0.1 -p 8883 --cafile tools/test-broker/out/ca.pem --insec
 Likewise `event/up` with `UplinkFrame` and `state/conn` with `ConnState` (add `-R` to
 skip the retained message and wait for a new one).
 
+## Downlink test
+
+Without a network server, [../tools/test-downlink.sh](../tools/test-downlink.sh)
+answers the next test uplink like a Class A downlink from ChirpStack (RX1 after 1 s
+on 868.1 MHz SF7, RX2 one second later on 869.525 MHz SF12, delay timing with the
+uplink's context) and prints the `DownlinkTxAck`:
+
+```sh
+tools/test-downlink.sh <gateway-id>       # RX1 OK, RX2 IGNORED
+tools/test-downlink.sh <gateway-id> 0     # RX1 TOO_LATE, RX2 OK
+tools/test-downlink.sh <gateway-id> 61    # both TOO_EARLY (limit 60 s from queuing)
+```
+
+The console shows the queued frame and, at its start time, `TX (no radio)`. An
+`IGNORED` item decodes as an empty `items {}` (proto3 default value).
+
 ## Host tests
 
 [wire](wire) holds the DNS and SNTP packet code without I/O:
@@ -88,6 +107,10 @@ skip the retained message and wait for a new one).
 from the protos in [chirpstack/proto](chirpstack/proto) (ChirpStack v4.20.0) and
 encodes the published ones; its tests decode the output with `protoc`:
 `cd chirpstack && cargo test --target x86_64-unknown-linux-gnu`.
+
+[jit](jit) is the downlink queue (too late/too early, collisions, first free slot,
+counter wrap) and the LoRa airtime:
+`cd jit && cargo test --target x86_64-unknown-linux-gnu`.
 
 ## Regression test for the MQTT/TLS stack
 

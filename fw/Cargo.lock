@@ -1191,6 +1191,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "jit"
+version = "0.1.0"
+dependencies = [
+ "heapless 0.9.3",
+]
+
+[[package]]
 name = "keccak"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1493,6 +1500,7 @@ dependencies = [
  "embedded-io-async 0.7.0",
  "embedded-tls",
  "heapless 0.9.3",
+ "jit",
  "log",
  "panic-halt",
  "portable-atomic",

@@ -2,14 +2,16 @@
 //!
 //! Current state: Ethernet (DHCP or static), hosts table + DNS, SNTP, TLS 1.3 + MQTT 5
 //! session with ChirpStack protobuf messages: retained ConnState with Last Will,
-//! GatewayStats every 30 s, command/down subscription and a test UplinkFrame every 10 s.
-//! No radio yet. Log output on the USB-C port (CDC-ACM).
+//! GatewayStats every 30 s, a test UplinkFrame every 10 s, and DownlinkFrames scheduled
+//! in the JIT queue and acknowledged. No radio yet: downlinks are logged at their start.
+//! Log output on the USB-C port (CDC-ACM).
 
 #![no_std]
 #![no_main]
 
 mod clock;
 mod config;
+mod downlink;
 mod ids;
 mod mqtt;
 mod resolve;
@@ -27,7 +29,7 @@ use embassy_rp::spi::{Async, Config as SpiConfig, Spi};
 use embassy_rp::trng::Trng;
 use embassy_rp::usb::Driver;
 use embassy_rp::{bind_interrupts, dma, trng, usb};
-use embassy_time::{Delay, Instant, Timer};
+use embassy_time::{Delay, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use log::{info, warn};
 use panic_halt as _;
@@ -81,7 +83,7 @@ async fn test_uplink_task(gateway_id: &'static str) -> ! {
             snr: 9.5,
             channel: 0,
             rf_chain: 0,
-            count_us: Instant::now().as_micros() as u32,
+            count_us: downlink::count_us(),
             crc_ok: true,
             time_us: clock::now_unix_us(),
         };
@@ -176,4 +178,5 @@ async fn main(spawner: Spawner) {
     let bufs = BUFFERS.init(Buffers::new());
     spawner.spawn(mqtt::mqtt_task(stack, ids.gateway_id.as_str(), bufs).unwrap());
     spawner.spawn(test_uplink_task(ids.gateway_id.as_str()).unwrap());
+    spawner.spawn(downlink::tx_task().unwrap());
 }
