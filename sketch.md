@@ -765,8 +765,10 @@ Keep a DNP footprint on the PCB.
 - Watchdog timeout and which tasks feed it; whether to use the second core.
 - Gateway ID: `fw/` uses the RP2350 chip ID as placeholder EUI-64 until the SX1302
   EUI can be read; switch over then (re-register the boards in ChirpStack).
-- SNTP client: `fw/` uses the build time as clock for now, so the fail-closed path
-  (section 6) is not active yet.
+- SNTP and resolver: implemented in `fw/` and tested on hardware (DNS via DHCP and
+  static, last known address, NTP by IP, fail closed without a time source; several
+  hours with hourly SNTP). The W5500-EVB-Pico2 clock runs ~35 ppm fast (steady
+  −126…−138 ms per hourly sync); no drift compensation for now.
 
 ### 9.2 Hardware and verification
 

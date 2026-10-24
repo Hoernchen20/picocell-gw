@@ -9,7 +9,7 @@ use core::num::NonZero;
 
 use embassy_futures::select::{Either3, select3};
 use embassy_net::tcp::TcpSocket;
-use embassy_net::{Ipv4Address, Stack};
+use embassy_net::Stack;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Ticker, Timer};
@@ -24,8 +24,8 @@ use rust_mqtt::client::options::{
 use rust_mqtt::config::KeepAlive;
 use rust_mqtt::types::{MqttBinary, MqttString, TopicFilter, TopicName};
 
-use crate::config;
 use crate::tls::{FailClosed, Suite};
+use crate::{clock, config, resolve};
 
 const KEEP_ALIVE_S: u16 = 30;
 const MAX_PACKET: u32 = 8192;
@@ -83,8 +83,8 @@ pub async fn mqtt_task(
     gateway_id: &'static str,
     bufs: &'static mut Buffers,
 ) -> ! {
-    let Some(broker) = config::broker() else {
-        warn!("invalid PICOCELL_MQTT_ADDR / PICOCELL_MQTT_PORT, MQTT disabled");
+    let Some(port) = config::mqtt_port() else {
+        warn!("invalid PICOCELL_MQTT_PORT, MQTT disabled");
         loop {
             Timer::after_secs(3600).await;
         }
@@ -92,7 +92,14 @@ pub async fn mqtt_task(
     let mut backoff = 1u64;
     loop {
         stack.wait_config_up().await;
-        match session(stack, broker, gateway_id, bufs).await {
+        // Fail closed (sketch.md section 6): certificate dates cannot be checked yet.
+        if !clock::is_set() {
+            info!("mqtt: waiting for the time");
+            while !clock::is_set() {
+                Timer::after_secs(1).await;
+            }
+        }
+        match session(stack, port, gateway_id, bufs).await {
             // Was connected: retry soon.
             Ok(()) => backoff = 1,
             Err(e) => warn!("mqtt: {e}"),
@@ -106,10 +113,18 @@ pub async fn mqtt_task(
 /// One connection. `Ok` once the session was up and then ended, `Err` if it never came up.
 async fn session(
     stack: Stack<'static>,
-    broker: (Ipv4Address, u16),
+    port: u16,
     gateway_id: &str,
     bufs: &mut Buffers,
 ) -> Result<(), &'static str> {
+    let addr = match resolve::resolve(stack, config::MQTT_HOST).await {
+        Ok(a) => a,
+        Err(e) => {
+            warn!("mqtt: {}: {e}", config::MQTT_HOST);
+            return Err("broker address unknown");
+        }
+    };
+
     let state_topic = topic(gateway_id, "state/conn");
     let up_topic = topic(gateway_id, "event/up");
     let down_topic = topic(gateway_id, "command/down");
@@ -117,7 +132,7 @@ async fn session(
     let mut socket = TcpSocket::new(stack, &mut bufs.tcp_rx, &mut bufs.tcp_tx);
     // Also bounds poll_body(): never wrap MQTT reads in a timeout (not cancel-safe).
     socket.set_timeout(Some(Duration::from_secs(u64::from(KEEP_ALIVE_S) * 3)));
-    socket.connect(broker).await.map_err(|_| "tcp connect failed")?;
+    socket.connect((addr, port)).await.map_err(|_| "tcp connect failed")?;
 
     let tls_config = TlsConfig::new().with_server_name(config::MQTT_HOST);
     let mut tls: TlsConnection<'_, _, Suite> =

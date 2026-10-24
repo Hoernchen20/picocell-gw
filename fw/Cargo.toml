@@ -8,7 +8,7 @@ publish = false
 embassy-executor = "0.10.0"
 embassy-time = "0.5.1"
 embassy-rp = { version = "0.10.0", features = ["unstable-pac", "time-driver", "critical-section-impl", "rp235xa", "binary-info", "executor-thread"] }
-embassy-net = { version = "0.9.1", features = ["tcp", "proto-ipv4", "medium-ethernet", "dhcpv4"] }
+embassy-net = { version = "0.9.1", features = ["tcp", "udp", "proto-ipv4", "medium-ethernet", "dhcpv4"] }
 embassy-net-wiznet = "0.3.0"
 embassy-sync = "0.8.0"
 embassy-futures = "0.1.2"
@@ -32,6 +32,7 @@ critical-section = "1.1"
 portable-atomic = { version = "1.5", features = ["critical-section"] }
 static_cell = "2.1"
 panic-halt = "1.0"
+wire = { path = "wire" }
 
 [profile.release]
 debug = 2

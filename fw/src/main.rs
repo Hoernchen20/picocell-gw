@@ -1,15 +1,18 @@
 //! picocell-gw firmware: W5500-EVB-Pico2 → ChirpStack over MQTT/TLS (see sketch.md).
 //!
-//! Current state: Ethernet (DHCP or static), TLS 1.3 + MQTT 5 session with retained
-//! ConnState, Last Will, command/down subscription and a test uplink every 10 s. No
-//! radio yet. Log output on the USB-C port (CDC-ACM).
+//! Current state: Ethernet (DHCP or static), hosts table + DNS, SNTP, TLS 1.3 + MQTT 5
+//! session with retained ConnState, Last Will, command/down subscription and a test
+//! uplink every 10 s. No radio yet. Log output on the USB-C port (CDC-ACM).
 
 #![no_std]
 #![no_main]
 
+mod clock;
 mod config;
 mod ids;
 mod mqtt;
+mod resolve;
+mod sntp;
 mod tls;
 
 use embassy_executor::Spawner;
@@ -28,6 +31,7 @@ use embedded_hal_bus::spi::ExclusiveDevice;
 use log::{info, warn};
 use panic_halt as _;
 use static_cell::StaticCell;
+use wire::time::Utc;
 
 use crate::config::Net;
 use crate::ids::Ids;
@@ -77,10 +81,11 @@ async fn status_task(stack: Stack<'static>, ids: &'static Ids) -> ! {
     loop {
         let m = ids.mac;
         info!(
-            "gateway id {} | mac {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} | ip {:?} | build {}",
+            "gateway id {} | mac {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} | ip {:?} | {} | build {}",
             ids.gateway_id, m[0], m[1], m[2], m[3], m[4], m[5],
             stack.config_v4().map(|c| c.address),
-            config::build_time()
+            clock::Now,
+            Utc(config::build_time())
         );
         Timer::after_secs(30).await;
     }
@@ -93,9 +98,6 @@ async fn main(spawner: Spawner) {
     spawner.spawn(logger_task(Driver::new(p.USB, Irqs)).unwrap());
 
     tls::init_rng(Trng::new(p.TRNG, Irqs, Default::default()));
-    // TODO: SNTP. Until then the build time stands in, so certificate dates are
-    // checked against it and the fail-closed path is never taken.
-    tls::set_time(config::build_time());
 
     static IDS: StaticCell<Ids> = StaticCell::new();
     let ids: &'static Ids = IDS.init(Ids::read());
@@ -129,7 +131,15 @@ async fn main(spawner: Spawner) {
             embassy_net::Config::default()
         }
     };
-    static RESOURCES: StaticCell<StackResources<3>> = StaticCell::new();
+    if config::hosts().is_none() {
+        warn!("invalid PICOCELL_HOSTS, hosts table ignored");
+    }
+    if config::dns_servers().is_none() {
+        warn!("invalid PICOCELL_DNS, DNS disabled");
+    }
+
+    // DHCP, MQTT (TCP), SNTP (UDP) and one DNS lookup each from the MQTT and SNTP tasks.
+    static RESOURCES: StaticCell<StackResources<6>> = StaticCell::new();
     let (stack, runner) = embassy_net::new(
         device,
         net_config,
@@ -138,6 +148,7 @@ async fn main(spawner: Spawner) {
     );
     spawner.spawn(net_task(runner).unwrap());
     spawner.spawn(status_task(stack, ids).unwrap());
+    spawner.spawn(sntp::sntp_task(stack).unwrap());
 
     static BUFFERS: StaticCell<Buffers> = StaticCell::new();
     let bufs = BUFFERS.init(Buffers::new());

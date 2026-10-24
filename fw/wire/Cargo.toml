@@ -1,0 +1,9 @@
+[package]
+name = "wire"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Packet encoding and parsing without I/O or dependencies, so it can be tested on the
+# host: cargo test --target x86_64-unknown-linux-gnu
+[dependencies]

@@ -1,5 +1,5 @@
 //! Puts `memory.x` and the broker CA on the linker / include path and records the build
-//! time (stand-in clock until SNTP exists).
+//! time (lower bound for SNTP results).
 
 use std::env;
 use std::fs;
@@ -32,7 +32,9 @@ fn main() {
         "PICOCELL_NET",
         "PICOCELL_NET_GATEWAY",
         "PICOCELL_MQTT_HOST",
-        "PICOCELL_MQTT_ADDR",
+        "PICOCELL_HOSTS",
+        "PICOCELL_DNS",
+        "PICOCELL_NTP",
         "PICOCELL_MQTT_PORT",
         "PICOCELL_MQTT_PASSWORD",
         "PICOCELL_TOPIC_PREFIX",

@@ -1,11 +1,11 @@
 //! TLS support: RNG driver for `embassy-crypto`, clock and the fail-closed verifier.
 
 use core::cell::RefCell;
-use core::sync::atomic::Ordering;
 
 use critical_section::Mutex;
 // Software SHA-256, HMAC, AES-GCM and P-256 drivers, registered at link time.
 use embassy_crypto_rustcrypto as _;
+use embassy_crypto::driver::Rng;
 use embassy_rp::peripherals::TRNG;
 use embassy_rp::trng::Trng;
 use embedded_tls::pki::CertVerifier;
@@ -13,7 +13,8 @@ use embedded_tls::{
     Aes128GcmSha256, Certificate, CertificateRef, CertificateVerifyRef, TlsCipherSuite, TlsClock,
     TlsError, TlsVerifier,
 };
-use portable_atomic::AtomicU64;
+
+use crate::clock;
 
 pub type Suite = Aes128GcmSha256;
 
@@ -27,7 +28,7 @@ pub fn init_rng(trng: Trng<'static, TRNG>) {
 
 struct TrngDriver;
 
-impl embassy_crypto::driver::Rng for TrngDriver {
+impl Rng for TrngDriver {
     fn fill_bytes(buf: &mut [u8]) {
         critical_section::with(|cs| {
             let mut trng = TRNG_CELL.borrow_ref_mut(cs);
@@ -38,21 +39,16 @@ impl embassy_crypto::driver::Rng for TrngDriver {
 
 embassy_crypto::rng_impl!(TrngDriver);
 
-/// Unix time in seconds, 0 = unknown.
-static UNIX_TIME: AtomicU64 = AtomicU64::new(0);
-
-pub fn set_time(unix: u64) {
-    UNIX_TIME.store(unix, Ordering::Relaxed);
+/// Random bytes from the TRNG, e.g. DNS IDs and SNTP cookies.
+pub fn random_bytes(buf: &mut [u8]) {
+    TrngDriver::fill_bytes(buf)
 }
 
 pub struct Clock;
 
 impl TlsClock for Clock {
     fn now() -> Option<u64> {
-        match UNIX_TIME.load(Ordering::Relaxed) {
-            0 => None,
-            t => Some(t),
-        }
+        clock::now_unix_s()
     }
 }
 
