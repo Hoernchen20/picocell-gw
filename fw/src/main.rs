@@ -4,13 +4,14 @@
 //! session with ChirpStack protobuf messages: retained ConnState with Last Will,
 //! GatewayStats every 30 s, a test UplinkFrame every 10 s, and DownlinkFrames scheduled
 //! in the JIT queue and acknowledged. No radio yet: downlinks are logged at their start.
-//! Log output on the USB-C port (CDC-ACM).
+//! Log output and console commands on the USB-C port (CDC-ACM).
 
 #![no_std]
 #![no_main]
 
 mod clock;
 mod config;
+mod console;
 mod downlink;
 mod ids;
 mod mqtt;
@@ -47,11 +48,6 @@ bind_interrupts!(struct Irqs {
 });
 
 type W5500Spi = ExclusiveDevice<Spi<'static, SPI0, Async>, Output<'static>, Delay>;
-
-#[embassy_executor::task]
-async fn logger_task(driver: Driver<'static, USB>) {
-    embassy_usb_logger::run!(1024, log::LevelFilter::Info, driver);
-}
 
 #[embassy_executor::task]
 async fn ethernet_task(runner: Runner<'static, W5500, W5500Spi, Input<'static>, Output<'static>>) -> ! {
@@ -98,33 +94,35 @@ async fn test_uplink_task(gateway_id: &'static str) -> ! {
     }
 }
 
-/// Repeats the board identity and network state, since the USB console usually
-/// connects after boot.
+/// Logs each change of the IPv4 configuration (DHCP lease, link loss).
 #[embassy_executor::task]
-async fn status_task(stack: Stack<'static>, ids: &'static Ids) -> ! {
+async fn net_log_task(stack: Stack<'static>) -> ! {
     loop {
-        let m = ids.mac;
-        info!(
-            "gateway id {} | mac {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} | ip {:?} | {} | build {}",
-            ids.gateway_id, m[0], m[1], m[2], m[3], m[4], m[5],
-            stack.config_v4().map(|c| c.address),
-            clock::Now,
-            Utc(config::build_time())
-        );
-        Timer::after_secs(30).await;
+        stack.wait_config_up().await;
+        if let Some(c) = stack.config_v4() {
+            info!("network up: {}, gateway {:?}", c.address, c.gateway);
+        }
+        stack.wait_config_down().await;
+        info!("network down");
     }
 }
 
 #[embassy_executor::main(executor = "embassy_rp::executor::Executor", entry = "cortex_m_rt::entry")]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
-
-    spawner.spawn(logger_task(Driver::new(p.USB, Irqs)).unwrap());
+    console::init();
 
     tls::init_rng(Trng::new(p.TRNG, Irqs, Default::default()));
 
     static IDS: StaticCell<Ids> = StaticCell::new();
     let ids: &'static Ids = IDS.init(Ids::read());
+    let m = ids.mac;
+    info!(
+        "picocell-gw {}, built {}, gateway id {}, mac {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        env!("CARGO_PKG_VERSION"),
+        Utc(config::build_time()),
+        ids.gateway_id, m[0], m[1], m[2], m[3], m[4], m[5]
+    );
 
     // W5500 on the EVB: SPI0 GP16 MISO, GP17 CS, GP18 SCK, GP19 MOSI, GP20 RST, GP21 INT.
     let mut spi_cfg = SpiConfig::default();
@@ -171,7 +169,8 @@ async fn main(spawner: Spawner) {
         RoscRng.next_u64(),
     );
     spawner.spawn(net_task(runner).unwrap());
-    spawner.spawn(status_task(stack, ids).unwrap());
+    spawner.spawn(net_log_task(stack).unwrap());
+    spawner.spawn(console::console_task(Driver::new(p.USB, Irqs), console::Context { stack, ids }).unwrap());
     spawner.spawn(sntp::sntp_task(stack).unwrap());
 
     static BUFFERS: StaticCell<Buffers> = StaticCell::new();

@@ -12,7 +12,7 @@ embassy-net = { version = "0.9.1", features = ["tcp", "udp", "proto-ipv4", "medi
 embassy-net-wiznet = "0.3.0"
 embassy-sync = "0.8.0"
 embassy-futures = "0.1.2"
-embassy-usb-logger = "0.6.0"
+embassy-usb = "0.6.0"
 
 # embedded-tls 0.19.0 has an authentication bypass (#215) and a non-cancel-safe read;
 # both are fixed on main only. Review upstream changes before bumping the rev.
@@ -35,6 +35,7 @@ panic-halt = "1.0"
 wire = { path = "wire" }
 chirpstack = { path = "chirpstack" }
 jit = { path = "jit" }
+console = { path = "console" }
 
 [profile.release]
 debug = 2

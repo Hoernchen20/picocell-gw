@@ -6,6 +6,7 @@
 
 use core::fmt::Write;
 use core::num::NonZero;
+use core::sync::atomic::{AtomicU8, Ordering};
 
 use embassy_futures::select::{Either4, select4};
 use embassy_net::tcp::TcpSocket;
@@ -67,6 +68,35 @@ impl Buffers {
     }
 }
 
+/// Connection state for the console's `status`.
+#[derive(Clone, Copy)]
+enum State {
+    Disabled,
+    WaitNetwork,
+    WaitTime,
+    Connecting,
+    Connected,
+    Backoff,
+}
+
+static STATE: AtomicU8 = AtomicU8::new(State::WaitNetwork as u8);
+
+fn set_state(s: State) {
+    STATE.store(s as u8, Ordering::Relaxed);
+}
+
+/// The connection state in words.
+pub fn state() -> &'static str {
+    match STATE.load(Ordering::Relaxed) {
+        x if x == State::Disabled as u8 => "disabled (invalid port)",
+        x if x == State::WaitNetwork as u8 => "waiting for the network",
+        x if x == State::WaitTime as u8 => "waiting for the time",
+        x if x == State::Connecting as u8 => "connecting",
+        x if x == State::Connected as u8 => "connected",
+        _ => "disconnected, retrying",
+    }
+}
+
 type Topic = heapless::String<64>;
 
 fn topic(gateway_id: &str, suffix: &str) -> Topic {
@@ -87,25 +117,30 @@ pub async fn mqtt_task(
 ) -> ! {
     let Some(port) = config::mqtt_port() else {
         warn!("invalid PICOCELL_MQTT_PORT, MQTT disabled");
+        set_state(State::Disabled);
         loop {
             Timer::after_secs(3600).await;
         }
     };
     let mut backoff = 1u64;
     loop {
+        set_state(State::WaitNetwork);
         stack.wait_config_up().await;
         // Fail closed (sketch.md section 6): certificate dates cannot be checked yet.
         if !clock::is_set() {
+            set_state(State::WaitTime);
             info!("mqtt: waiting for the time");
             while !clock::is_set() {
                 Timer::after_secs(1).await;
             }
         }
+        set_state(State::Connecting);
         match session(stack, port, gateway_id, bufs).await {
             // Was connected: retry soon.
             Ok(()) => backoff = 1,
             Err(e) => warn!("mqtt: {e}"),
         }
+        set_state(State::Backoff);
         info!("mqtt: reconnecting in {backoff} s");
         Timer::after_secs(backoff).await;
         backoff = (backoff * 2).min(60);
@@ -166,6 +201,7 @@ async fn session(
     // Safety: the CONNACK info borrowing the buffer was dropped.
     unsafe { client.buffer_mut().reset() };
     info!("mqtt: connected to {}", config::MQTT_HOST);
+    set_state(State::Connected);
     // Uplinks are not buffered across outages (sketch.md section 6): their RX windows
     // have passed, so drop whatever queued up while disconnected.
     let stale = UPLINKS.len();

@@ -1,0 +1,11 @@
+[package]
+name = "console"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Log history and line editing of the USB console without I/O, so it can be tested on
+# the host:
+#   cargo test --target x86_64-unknown-linux-gnu
+[dependencies]
+heapless = "0.9"

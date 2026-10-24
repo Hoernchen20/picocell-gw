@@ -8,7 +8,7 @@ Will, `GatewayStats` every 30 s (RX counters zero, duty-cycle load per sub-band)
 test `UplinkFrame` every 10 s (proprietary frame, made-up radio metadata), and
 `DownlinkFrame`s from `command/down` (Class A delay and Class C immediately timing)
 checked against the EU868 duty cycle, scheduled in the JIT queue and answered with a
-`DownlinkTxAck` on `event/ack`. No
+`DownlinkTxAck` on `event/ack`; log and commands on the USB console. No
 radio yet: a downlink is logged on the console at its start time instead of sent, and
 the RP2350 timer stands in for the SX1302 counter. No config store or provisioning
 yet; settings are build-time values in
@@ -56,10 +56,23 @@ is outvoted; a time before the build time is rejected.
 
 ## Console and first connection
 
-The USB-C port is a serial console (CDC-ACM), e.g. `picocom /dev/ttyACM0`. Every 30 s
-the board prints its gateway ID, MAC and IP. MAC and gateway ID are derived from the
-RP2350 chip ID, so several boards can share a network. Register each board with the
-broker using that ID:
+The USB-C port is a serial console (CDC-ACM) for log output and commands, e.g.
+`picocom /dev/ttyACM0` (or `/dev/serial/by-id/usb-picocell_picocell-gw_console_<gateway
+id>-if00`). The last 8 KB of log lines are kept in RAM and replayed when a terminal
+opens the port, so the boot messages show up even after connecting late; after that
+new lines appear live above the input line. Commands (`help` lists them):
+
+| Command | |
+|---|---|
+| `status` | firmware, gateway ID, MAC, IP, time, uptime, MQTT state, duty-cycle load |
+| `log` / `log off\|warn\|info` | show / set the live log level (`info` after boot, not saved) |
+| `log show [lines]` | the whole history, or its last lines, regardless of the level |
+| `reboot` | restart |
+| `bootsel` | restart into the USB bootloader, so `cargo run` flashes without the button |
+
+Each command ends with `ok` or `error: ...` on its own line. MAC and gateway ID are
+derived from the RP2350 chip ID, so several boards can share a network; the boot
+message and `status` show them. Register each board with the broker using that ID:
 
 ```sh
 tools/test-broker/add-gateway.sh <gateway-id>
@@ -126,6 +139,9 @@ its sub-band for an hour (`duty_cycle_stats` in `event/stats`); a reboot clears 
 from the protos in [chirpstack/proto](chirpstack/proto) (ChirpStack v4.20.0) and
 encodes the published ones; its tests decode the output with `protoc`:
 `cd chirpstack && cargo test --target x86_64-unknown-linux-gnu`.
+
+[console](console) holds the log history ring and the line editor of the USB console:
+`cd console && cargo test --target x86_64-unknown-linux-gnu`.
 
 [jit](jit) is the downlink queue (too late/too early, collisions, first free slot,
 counter wrap), the LoRa airtime and the EU868 duty cycle:
