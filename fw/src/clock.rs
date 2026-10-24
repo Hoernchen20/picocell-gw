@@ -25,9 +25,12 @@ pub fn is_set() -> bool {
     base_us().is_some()
 }
 
+pub fn now_unix_us() -> Option<i64> {
+    Some(base_us()? + Instant::now().as_micros() as i64)
+}
+
 pub fn now_unix_s() -> Option<u64> {
-    let us = base_us()? + Instant::now().as_micros() as i64;
-    u64::try_from(us / 1_000_000).ok()
+    u64::try_from(now_unix_us()? / 1_000_000).ok()
 }
 
 /// The current time for logs, or "time unknown".

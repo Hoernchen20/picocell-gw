@@ -3,9 +3,11 @@
 Rust/Embassy firmware for the W5500-EVB-Pico2 (RP2350). Design: [../sketch.md](../sketch.md).
 
 Current state: Ethernet (DHCP or static IPv4), hosts table + DNS, SNTP, TLS 1.3 +
-MQTT 5 to the broker, retained `state/conn` with Last Will, `command/down`
-subscription and a test uplink every 10 s. No radio, config store or provisioning
-yet; settings are build-time values in [.cargo/config.toml](.cargo/config.toml).
+MQTT 5 to the broker with ChirpStack protobuf messages: retained `ConnState` with Last
+Will, `GatewayStats` every 30 s (counters zero), `command/down` subscription and a
+test `UplinkFrame` every 10 s (proprietary frame, made-up radio metadata). No radio,
+config store or provisioning yet; settings are build-time values in
+[.cargo/config.toml](.cargo/config.toml).
 
 ## Requirements
 
@@ -65,10 +67,27 @@ mosquitto_sub -h 127.0.0.1 -p 8883 --cafile tools/test-broker/out/ca.pem --insec
     -u admin -P admin-pw -V mqttv5 -t 'eu868/gateway/#' -v
 ```
 
+The payloads are protobuf; decode one message with
+[../tools/pb-decode.sh](../tools/pb-decode.sh) (no system `protoc` needed):
+
+```sh
+mosquitto_sub -h 127.0.0.1 -p 8883 --cafile tools/test-broker/out/ca.pem --insecure \
+    -u admin -P admin-pw -V mqttv5 -t 'eu868/gateway/+/event/stats' -C 1 -N \
+    | tools/pb-decode.sh GatewayStats
+```
+
+Likewise `event/up` with `UplinkFrame` and `state/conn` with `ConnState` (add `-R` to
+skip the retained message and wait for a new one).
+
 ## Host tests
 
 [wire](wire) holds the DNS and SNTP packet code without I/O:
 `cd wire && cargo test --target x86_64-unknown-linux-gnu`.
+
+[chirpstack](chirpstack) generates the ChirpStack gateway messages with `micropb`
+from the protos in [chirpstack/proto](chirpstack/proto) (ChirpStack v4.20.0) and
+encodes the published ones; its tests decode the output with `protoc`:
+`cd chirpstack && cargo test --target x86_64-unknown-linux-gnu`.
 
 ## Regression test for the MQTT/TLS stack
 

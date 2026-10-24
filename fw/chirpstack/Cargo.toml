@@ -1,0 +1,23 @@
+[package]
+name = "chirpstack"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# ChirpStack gateway messages (proto/, from chirpstack v4.20.0 api/proto), generated
+# with micropb at build time. Host tests (need no system protoc):
+#   cargo test --target x86_64-unknown-linux-gnu
+[dependencies]
+micropb = { version = "0.6", default-features = false, features = ["encode", "decode", "enable-64bit", "container-heapless-0-9"] }
+heapless = "0.9"
+
+[build-dependencies]
+micropb-gen = "0.6"
+protoc-bin-vendored = "3.3"
+
+[dev-dependencies]
+protoc-bin-vendored = "3.3"
+
+# The proto comments become doc comments, with code examples in other languages.
+[lib]
+doctest = false

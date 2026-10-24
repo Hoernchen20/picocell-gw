@@ -769,6 +769,11 @@ Keep a DNP footprint on the PCB.
   static, last known address, NTP by IP, fail closed without a time source; several
   hours with hourly SNTP). The W5500-EVB-Pico2 clock runs ~35 ppm fast (steady
   −126…−138 ms per hourly sync); no drift compensation for now.
+- Protobuf: `fw/chirpstack` generates the messages from ChirpStack v4.20.0 protos
+  (unused mesh/ZMQ/exec messages skipped); `ConnState`, `UplinkFrame` (test frame)
+  and `GatewayStats` (counters still zero, metadata `firmware`/`build`) published,
+  checked against `protoc --decode` in host tests and on hardware (incl. Last Will
+  OFFLINE). +10 KB text.
 
 ### 9.2 Hardware and verification
 
