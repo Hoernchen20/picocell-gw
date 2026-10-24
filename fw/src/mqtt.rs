@@ -15,6 +15,7 @@ use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Ticker, Timer};
 use embedded_tls::{TlsConfig, TlsConnection, TlsContext};
 use log::{info, warn};
+use jit::duty::{self, EU868};
 use rust_mqtt::buffer::BumpBuffer;
 use rust_mqtt::client::Client;
 use rust_mqtt::client::event::Event;
@@ -259,7 +260,8 @@ async fn session(
     Ok(())
 }
 
-/// Encodes a `GatewayStats` message into `buf`. The RX counters stay zero until there
+/// Encodes a `GatewayStats` message with the duty-cycle load into `buf`. The RX
+/// counters stay zero until there
 /// is a radio.
 fn stats(gateway_id: &str, buf: &mut [u8]) -> usize {
     let mut build = heapless::String::<32>::new();
@@ -269,5 +271,14 @@ fn stats(gateway_id: &str, buf: &mut [u8]) -> usize {
     let time_us = clock::now_unix_us().unwrap_or(0);
     let (tx_received, tx_emitted) = downlink::take_counters();
     let counters = chirpstack::Counters { tx_received, tx_emitted, ..Default::default() };
-    chirpstack::gateway_stats(gateway_id, time_us, &counters, &metadata, buf).unwrap_or(0)
+    let used = downlink::duty_cycle_used();
+    let bands: [_; EU868.len()] = core::array::from_fn(|i| chirpstack::DutyBand {
+        name: EU868[i].name,
+        frequency_min: *EU868[i].hz.start(),
+        frequency_max: *EU868[i].hz.end(),
+        load_max_us: EU868[i].limit_us(),
+        load_tracked_us: used[i],
+    });
+    let duty = chirpstack::DutyCycle { window_us: duty::WINDOW_US, bands: &bands };
+    chirpstack::gateway_stats(gateway_id, time_us, &counters, Some(&duty), &metadata, buf).unwrap_or(0)
 }

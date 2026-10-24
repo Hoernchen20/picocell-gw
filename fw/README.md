@@ -4,9 +4,11 @@ Rust/Embassy firmware for the W5500-EVB-Pico2 (RP2350). Design: [../sketch.md](.
 
 Current state: Ethernet (DHCP or static IPv4), hosts table + DNS, SNTP, TLS 1.3 +
 MQTT 5 to the broker with ChirpStack protobuf messages: retained `ConnState` with Last
-Will, `GatewayStats` every 30 s (RX counters zero), a test `UplinkFrame` every 10 s
-(proprietary frame, made-up radio metadata), and `DownlinkFrame`s from `command/down`
-scheduled in the JIT queue and answered with a `DownlinkTxAck` on `event/ack`. No
+Will, `GatewayStats` every 30 s (RX counters zero, duty-cycle load per sub-band), a
+test `UplinkFrame` every 10 s (proprietary frame, made-up radio metadata), and
+`DownlinkFrame`s from `command/down` (Class A delay and Class C immediately timing)
+checked against the EU868 duty cycle, scheduled in the JIT queue and answered with a
+`DownlinkTxAck` on `event/ack`. No
 radio yet: a downlink is logged on the console at its start time instead of sent, and
 the RP2350 timer stands in for the SX1302 counter. No config store or provisioning
 yet; settings are build-time values in
@@ -98,6 +100,23 @@ tools/test-downlink.sh <gateway-id> 61    # both TOO_EARLY (limit 60 s from queu
 The console shows the queued frame and, at its start time, `TX (no radio)`. An
 `IGNORED` item decodes as an empty `items {}` (proto3 default value).
 
+[../tools/test-classc.sh](../tools/test-classc.sh) sends Class C downlinks
+("immediately" timing, no uplink needed) and prints one status per frame. The
+defaults fill the duty cycle of the 0.1 % sub-band 868.7–869.2 MHz (3.6 s per hour)
+with SF12 frames of 1.32 s:
+
+```sh
+tools/test-classc.sh <gateway-id>                      # 2 × OK, 3 × DUTY_CYCLE_OVERFLOW
+tools/test-classc.sh <gateway-id> 3 869525000 12 27    # RX2 band, 10 %: 3 × OK
+tools/test-classc.sh <gateway-id> 1 868850000 12 20    # TX_POWER (16 dBm there)
+tools/test-classc.sh <gateway-id> 1 868650000          # TX_FREQ (between sub-bands)
+```
+
+The frames go out back to back: each starts 3.5 ms after the previous one ends
+(start delay and margins), as the queue keeps a frame's airtime blocked until it is
+sent. The airtime counts against
+its sub-band for an hour (`duty_cycle_stats` in `event/stats`); a reboot clears it.
+
 ## Host tests
 
 [wire](wire) holds the DNS and SNTP packet code without I/O:
@@ -109,7 +128,7 @@ encodes the published ones; its tests decode the output with `protoc`:
 `cd chirpstack && cargo test --target x86_64-unknown-linux-gnu`.
 
 [jit](jit) is the downlink queue (too late/too early, collisions, first free slot,
-counter wrap) and the LoRa airtime:
+counter wrap), the LoRa airtime and the EU868 duty cycle:
 `cd jit && cargo test --target x86_64-unknown-linux-gnu`.
 
 ## Regression test for the MQTT/TLS stack

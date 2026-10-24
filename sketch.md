@@ -750,8 +750,6 @@ Keep a DNP footprint on the PCB.
   (~71 min), mapping "Immediately" to a timestamped TX with margin (as Concentratord
   does), `context` encoding in uplinks so ChirpStack echoes it back, collision and
   too-late checks.
-- Duty-cycle model: ETSI EN 300 220 sub-bands and limits, window length, how
-  FUOTA bursts on 869.525 MHz are handled.
 - Radio calibration: extract `rssi_offset` and the TX gain LUT from Seeed's
   `global_conf.json.sx1250.EU868`; define the TX power cap on USB power (or no TX).
 - USB console protocol: command syntax, entering secrets, uploading a CA (DER).
@@ -778,12 +776,30 @@ Keep a DNP footprint on the PCB.
   frames sorted by `count_us`, wrap-safe offsets, too late below 42.5 ms lead (40 ms
   + start delay 1.5 ms + margin 1 ms), too early beyond 60 s, collision with start
   delay and 1 ms margins around each frame's airtime, "Immediately" in the first free
-  slot. The radio task takes a frame 30 ms before its start. `DownlinkFrame` items are
+  slot. The radio task takes a frame 30 ms before its start; its airtime stays blocked
+  until the radio task reports it done, so frames queued meanwhile go after it.
+  With the radio: the next frame is handed over only after TX done, 2.5–3.5 ms before
+  its start when frames are back to back; check that `lgw_send` makes that, else
+  widen the gap. `DownlinkFrame` items are
   tried in order, the first accepted one is OK and the rest IGNORED; GPS epoch →
   `GPS_UNLOCKED`, non-LoRa or other code rates → `INTERNAL_ERROR`, outside
   863–870 MHz → `TX_FREQ`, above 27 dBm → `TX_POWER`. Until the radio is there, the
   RP2350 timer stands in for the SX1302 counter and frames are logged at their start;
   `tools/test-downlink.sh` answers a test uplink like a Class A downlink.
+- Duty cycle: `fw/jit` `duty`, ETSI EN 300 220-2 / ERC 70-03 sub-bands 863–865 (0.1 %),
+  865–868 (1 %), 868.0–868.6 (1 %), 868.7–869.2 (0.1 %), 869.4–869.65 (10 %, 27 dBm)
+  and 869.7–870 MHz (1 %), all others 16 dBm EIRP. The whole frame (frequency ±
+  bandwidth/2) must lie in one sub-band, else `TX_FREQ`; above the band's power
+  `TX_POWER`. Sliding 1 h window in one-minute buckets (62 per band, 3 KB); a frame is
+  charged to the minute of its start when queued, and the check sums every bucket that
+  may still be in the window, so it is conservative by up to two minutes. Over the
+  limit → `DUTY_CYCLE_OVERFLOW`, checked before the queue. FUOTA bursts on
+  869.525 MHz get the full 360 s per hour and are then refused until airtime ages out;
+  no reservation for Class A RX2 in the same band. Not kept across reboots. Load per
+  band in `GatewayStats.duty_cycle_stats`. Class C (unicast, and multicast with
+  scheduling type Delay, both "immediately") uses the first free slot;
+  `tools/test-classc.sh` tests it. FUOTA test still open (needs ChirpStack and a
+  device).
 
 ### 9.2 Hardware and verification
 

@@ -54,7 +54,8 @@ items {
 }
 PB
 mqtt mosquitto_pub -t "$T/command/down" -q 1 -s < "$TMP/down"
-echo "downlink $DOWNLINK_ID sent (uplink $CONTEXT, RX1 +${RX1} s, RX2 +${RX2} s)"
+# printf: sh's echo would turn the escaped context bytes into raw ones.
+printf 'downlink %s sent (uplink %s, RX1 +%s s, RX2 +%s s)\n' "$DOWNLINK_ID" "$CONTEXT" "$RX1" "$RX2"
 
 wait $ACK || { echo "no DownlinkTxAck within 40 s" >&2; exit 1; }
 "$TOOLS/pb-decode.sh" DownlinkTxAck < "$TMP/ack"

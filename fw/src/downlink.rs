@@ -1,5 +1,5 @@
-//! Downlinks (sketch.md section 3.3): `DownlinkFrame` → JIT queue → radio, answered
-//! with a `DownlinkTxAck`.
+//! Downlinks (sketch.md section 3.3): `DownlinkFrame` → duty-cycle check → JIT queue →
+//! radio, answered with a `DownlinkTxAck`.
 //!
 //! No radio yet: the counter is the RP2350 timer instead of the SX1302's, and the TX
 //! task logs each frame at its start time instead of sending it.
@@ -15,17 +15,14 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::{Instant, Timer};
 use heapless::Vec;
+use jit::duty::{self, EU868};
 use jit::{At, Queue};
 use log::{info, warn};
-
-/// EU868 band edges.
-const FREQUENCY_HZ: core::ops::RangeInclusive<u32> = 863_000_000..=870_000_000;
-/// EU868 maximum (869.4–869.65 MHz); per sub-band limits come with duty-cycle tracking.
-const MAX_POWER_DBM: i32 = 27;
 
 /// A frame waiting for its start time.
 struct Tx {
     downlink_id: u32,
+    airtime_us: u32,
     frequency: u32,
     power: i32,
     bandwidth: u32,
@@ -37,7 +34,19 @@ struct Tx {
     payload: Vec<u8, 256>,
 }
 
-static QUEUE: Mutex<RefCell<Queue<Tx, 8>>> = Mutex::new(RefCell::new(Queue::new()));
+/// Queue and duty cycle under one lock: a frame is checked, queued and charged at once.
+struct Scheduler {
+    queue: Queue<Tx, 8>,
+    duty: duty::Tracker<{ EU868.len() }>,
+}
+
+static SCHEDULER: Mutex<RefCell<Scheduler>> =
+    Mutex::new(RefCell::new(Scheduler { queue: Queue::new(), duty: duty::Tracker::new() }));
+
+enum Rejected {
+    DutyCycle { used_us: u64 },
+    Queue(jit::Error),
+}
 /// A frame was queued: the TX task re-checks which one comes first.
 static QUEUED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
@@ -49,9 +58,23 @@ pub fn count_us() -> u32 {
     Instant::now().as_micros() as u32
 }
 
+/// Monotonic µs for the duty-cycle window, unlike `count_us` which wraps.
+fn now_us() -> u64 {
+    Instant::now().as_micros()
+}
+
 /// Downlink frames received and frames sent since the previous call, for `GatewayStats`.
 pub fn take_counters() -> (u32, u32) {
     (TX_RECEIVED.swap(0, Ordering::Relaxed), TX_EMITTED.swap(0, Ordering::Relaxed))
+}
+
+/// Airtime counted against each EU868 sub-band, for `GatewayStats`.
+pub fn duty_cycle_used() -> [u64; EU868.len()] {
+    let now = now_us();
+    critical_section::with(|cs| {
+        let s = SCHEDULER.borrow_ref(cs);
+        core::array::from_fn(|b| s.duty.used_us(b, now))
+    })
 }
 
 /// Queues the first item of a `DownlinkFrame` that can be sent and encodes the
@@ -85,12 +108,12 @@ fn schedule(id: u32, i: usize, item: &chirpstack::gw::DownlinkFrameItem) -> TxAc
             return TxAckStatus::InternalError;
         }
     };
-    if !FREQUENCY_HZ.contains(&tx.frequency) {
-        warn!("downlink {id}/{i}: {} Hz outside the band", tx.frequency);
+    let Some(band) = duty::band(&EU868, tx.frequency, tx.bandwidth) else {
+        warn!("downlink {id}/{i}: {} Hz BW{} not within a sub-band", tx.frequency, tx.bandwidth / 1000);
         return TxAckStatus::TxFreq;
-    }
-    if tx.power > MAX_POWER_DBM {
-        warn!("downlink {id}/{i}: {} dBm too high", tx.power);
+    };
+    if tx.power > EU868[band].max_eirp_dbm {
+        warn!("downlink {id}/{i}: {} dBm too high for {} MHz", tx.power, EU868[band].name);
         return TxAckStatus::TxPower;
     }
     let at = match tx.timing {
@@ -118,6 +141,7 @@ fn schedule(id: u32, i: usize, item: &chirpstack::gw::DownlinkFrameItem) -> TxAc
     };
     let entry = Tx {
         downlink_id: id,
+        airtime_us: airtime,
         frequency: tx.frequency,
         power: tx.power,
         bandwidth: tx.bandwidth,
@@ -128,19 +152,42 @@ fn schedule(id: u32, i: usize, item: &chirpstack::gw::DownlinkFrameItem) -> TxAc
         crc: tx.crc,
         payload,
     };
-    let now = count_us();
-    let r = critical_section::with(|cs| QUEUE.borrow_ref_mut(cs).enqueue(now, at, airtime, entry));
+    let (now, mono) = (count_us(), now_us());
+    let r = critical_section::with(|cs| {
+        let s = &mut *SCHEDULER.borrow_ref_mut(cs);
+        let used = s.duty.used_us(band, mono);
+        if !s.duty.allows(&EU868, band, mono, airtime) {
+            return Err(Rejected::DutyCycle { used_us: used });
+        }
+        let start = s.queue.enqueue(now, at, airtime, entry).map_err(Rejected::Queue)?;
+        // Charged when queued; a frame that later misses its start stays charged.
+        s.duty.charge(band, mono.wrapping_add_signed(jit::offset(start, now).into()), airtime);
+        Ok((start, used + u64::from(airtime)))
+    });
     match r {
-        Ok(start) => {
+        Ok((start, used)) => {
             QUEUED.signal(());
             info!(
-                "downlink {id}/{i}: queued for count_us {start} (in {} ms, {} ms airtime)",
+                "downlink {id}/{i}: queued for count_us {start} (in {} ms, {} ms airtime, {} MHz {} of {} ms/h)",
                 jit::offset(start, now) / 1000,
-                airtime / 1000
+                airtime / 1000,
+                EU868[band].name,
+                used / 1000,
+                EU868[band].limit_us() / 1000
             );
             TxAckStatus::Ok
         }
-        Err(e) => {
+        Err(Rejected::DutyCycle { used_us }) => {
+            warn!(
+                "downlink {id}/{i}: duty cycle: {} ms airtime, {} MHz {} of {} ms/h used",
+                airtime / 1000,
+                EU868[band].name,
+                used_us / 1000,
+                EU868[band].limit_us() / 1000
+            );
+            TxAckStatus::DutyCycleOverflow
+        }
+        Err(Rejected::Queue(e)) => {
             if let At::Count(t) = at {
                 warn!("downlink {id}/{i}: {e:?} (in {} ms)", jit::offset(t, now) / 1000);
             } else {
@@ -160,7 +207,7 @@ fn schedule(id: u32, i: usize, item: &chirpstack::gw::DownlinkFrameItem) -> TxAc
 #[embassy_executor::task]
 pub async fn tx_task() -> ! {
     loop {
-        let Some(start) = critical_section::with(|cs| QUEUE.borrow_ref(cs).next_start()) else {
+        let Some(start) = critical_section::with(|cs| SCHEDULER.borrow_ref(cs).queue.next_start()) else {
             QUEUED.wait().await;
             continue;
         };
@@ -171,7 +218,7 @@ pub async fn tx_task() -> ! {
                 continue;
             }
         }
-        let Some((start, tx)) = critical_section::with(|cs| QUEUE.borrow_ref_mut(cs).pop_due(count_us()))
+        let Some((start, tx)) = critical_section::with(|cs| SCHEDULER.borrow_ref_mut(cs).queue.pop_due(count_us()))
         else {
             continue;
         };
@@ -180,6 +227,7 @@ pub async fn tx_task() -> ! {
         let lead = jit::offset(start, count_us());
         if lead < jit::TX_START_DELAY_US as i32 {
             warn!("downlink {}: missed its start by {} µs", tx.downlink_id, -lead);
+            critical_section::with(|cs| SCHEDULER.borrow_ref_mut(cs).queue.tx_done());
             continue;
         }
         Timer::after_micros(lead as u64).await;
@@ -197,5 +245,8 @@ pub async fn tx_task() -> ! {
             if tx.crc { ", CRC" } else { "" },
             tx.payload.len()
         );
+        // The radio reports the end of the frame; until then the queue keeps it blocked.
+        Timer::after_micros(u64::from(tx.airtime_us)).await;
+        critical_section::with(|cs| SCHEDULER.borrow_ref_mut(cs).queue.tx_done());
     }
 }

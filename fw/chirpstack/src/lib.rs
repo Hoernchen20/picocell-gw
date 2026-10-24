@@ -48,6 +48,10 @@ fn timestamp(unix_us: i64) -> protobuf::Timestamp {
     }
 }
 
+fn duration(us: u64) -> protobuf::Duration {
+    protobuf::Duration { seconds: (us / 1_000_000) as i64, nanos: (us % 1_000_000 * 1000) as i32 }
+}
+
 pub fn conn_state(gateway_id: &str, online: bool, buf: &mut [u8]) -> Result<usize, Overflow> {
     let state = if online { gw::ConnState_::State::Online } else { gw::ConnState_::State::Offline };
     encode(&gw::ConnState { gateway_id: string(gateway_id)?, state }, buf)
@@ -120,10 +124,26 @@ pub struct Counters {
     pub tx_emitted: u32,
 }
 
+/// Duty-cycle load of one sub-band.
+pub struct DutyBand<'a> {
+    pub name: &'a str,
+    pub frequency_min: u32,
+    pub frequency_max: u32,
+    pub load_max_us: u64,
+    pub load_tracked_us: u64,
+}
+
+/// ETSI EN 300 220 duty-cycle tracking.
+pub struct DutyCycle<'a> {
+    pub window_us: u64,
+    pub bands: &'a [DutyBand<'a>],
+}
+
 pub fn gateway_stats(
     gateway_id: &str,
     time_us: i64,
     counters: &Counters,
+    duty_cycle: Option<&DutyCycle>,
     metadata: &[(&str, &str)],
     buf: &mut [u8],
 ) -> Result<usize, Overflow> {
@@ -135,6 +155,21 @@ pub fn gateway_stats(
     stats.tx_packets_emitted = counters.tx_emitted;
     for (k, v) in metadata {
         stats.metadata.insert(string(k)?, string(v)?).map_err(|_| Overflow)?;
+    }
+    if let Some(d) = duty_cycle {
+        let mut dc = gw::DutyCycleStats { regulation: common::Regulation::EtsiEn300220, ..Default::default() };
+        dc.set_window(duration(d.window_us));
+        for b in d.bands {
+            let mut band = gw::DutyCycleBand {
+                name: string(b.name)?,
+                frequency_min: b.frequency_min,
+                frequency_max: b.frequency_max,
+                ..Default::default()
+            };
+            band.set_load_max(duration(b.load_max_us)).set_load_tracked(duration(b.load_tracked_us));
+            dc.bands.push(band).map_err(|_| Overflow)?;
+        }
+        stats.set_duty_cycle_stats(dc);
     }
     encode(&stats, buf)
 }
@@ -339,7 +374,15 @@ mod tests {
     fn gateway_stats_interop() {
         let c = Counters { rx_received: 3, rx_received_ok: 2, tx_received: 1, tx_emitted: 1 };
         let mut buf = [0u8; 512];
-        let n = gateway_stats(ID, 1_792_849_845_000_000, &c, &[("firmware", "0.1.0")], &mut buf)
+        let bands = [DutyBand {
+            name: "869.4-869.65",
+            frequency_min: 869_400_000,
+            frequency_max: 869_650_000,
+            load_max_us: 360_000_000,
+            load_tracked_us: 1_155_072,
+        }];
+        let duty = DutyCycle { window_us: 3_600_000_000, bands: &bands };
+        let n = gateway_stats(ID, 1_792_849_845_000_000, &c, Some(&duty), &[("firmware", "0.1.0")], &mut buf)
             .unwrap();
         assert_eq!(lines(&protoc_decode("gw.GatewayStats", &buf[..n])), [
             "time {",
@@ -354,6 +397,24 @@ mod tests {
             "value: \"0.1.0\"",
             "}",
             "gateway_id: \"0016c001ff10a235\"",
+            "duty_cycle_stats {",
+            "regulation: ETSI_EN_300_220",
+            "window {",
+            "seconds: 3600",
+            "}",
+            "bands {",
+            "name: \"869.4-869.65\"",
+            "frequency_min: 869400000",
+            "frequency_max: 869650000",
+            "load_max {",
+            "seconds: 360",
+            "}",
+            "load_tracked {",
+            "seconds: 1",
+            "nanos: 155072000",
+            "}",
+            "}",
+            "}",
         ]);
     }
 
@@ -455,7 +516,7 @@ mod tests {
         assert_eq!(conn_state(&"x".repeat(33), true, &mut buf), Err(Overflow));
         let c = Counters::default();
         let meta = [("a", "1"), ("b", "2"), ("c", "3"), ("d", "4"), ("e", "5")];
-        assert_eq!(gateway_stats(ID, 0, &c, &meta, &mut [0u8; 512]), Err(Overflow));
+        assert_eq!(gateway_stats(ID, 0, &c, None, &meta, &mut [0u8; 512]), Err(Overflow));
     }
 
     #[test]

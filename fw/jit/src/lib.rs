@@ -7,6 +7,8 @@
 
 #![no_std]
 
+pub mod duty;
+
 use heapless::Vec;
 
 /// From handing a frame to the radio to the start of its preamble.
@@ -64,6 +66,8 @@ impl<T> Entry<T> {
 /// Up to `N` frames, sorted by start time and not overlapping.
 pub struct Queue<T, const N: usize> {
     entries: Vec<Entry<T>, N>,
+    /// Handed to the radio and not done yet: still blocks its airtime.
+    on_air: Option<Entry<()>>,
 }
 
 impl<T, const N: usize> Default for Queue<T, N> {
@@ -74,7 +78,7 @@ impl<T, const N: usize> Default for Queue<T, N> {
 
 impl<T, const N: usize> Queue<T, N> {
     pub const fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self { entries: Vec::new(), on_air: None }
     }
 
     pub fn len(&self) -> usize {
@@ -91,10 +95,9 @@ impl<T, const N: usize> Queue<T, N> {
             return Err(Error::Full);
         }
         let air = i64::from(airtime_us);
-        let collides = |e: &Entry<T>, s: i64| {
-            let (b0, b1) = e.span(now);
-            s - PRE < b1 && b0 < s + air + POST
-        };
+        let collides = |(b0, b1): (i64, i64), s: i64| s - PRE < b1 && b0 < s + air + POST;
+        // The frame on air comes before all queued ones.
+        let spans = || self.on_air.iter().map(|e| e.span(now)).chain(self.entries.iter().map(|e| e.span(now)));
         let start = match at {
             At::Count(t) => {
                 let s = i64::from(offset(t, now));
@@ -104,7 +107,7 @@ impl<T, const N: usize> Queue<T, N> {
                 if s > i64::from(MAX_ADVANCE_US) {
                     return Err(Error::TooEarly);
                 }
-                if self.entries.iter().any(|e| collides(e, s)) {
+                if spans().any(|b| collides(b, s)) {
                     return Err(Error::Collision);
                 }
                 s
@@ -112,9 +115,9 @@ impl<T, const N: usize> Queue<T, N> {
             At::Asap => {
                 // Sorted and disjoint: one pass, moving past each frame in the way.
                 let mut s = i64::from(MIN_LEAD_US);
-                for e in &self.entries {
-                    if collides(e, s) {
-                        s = e.span(now).1 + PRE;
+                for b in spans() {
+                    if collides(b, s) {
+                        s = b.1 + PRE;
                     }
                 }
                 if s > i64::from(MAX_ADVANCE_US) {
@@ -139,13 +142,20 @@ impl<T, const N: usize> Queue<T, N> {
     }
 
     /// Removes the first frame if it starts within `HANDOVER_US` of `now` (or is overdue).
+    /// Its airtime stays blocked until `tx_done`.
     pub fn pop_due(&mut self, now: u32) -> Option<(u32, T)> {
         let e = self.entries.first()?;
         if offset(e.start, now) > HANDOVER_US as i32 {
             return None;
         }
         let e = self.entries.remove(0);
+        self.on_air = Some(Entry { start: e.start, airtime_us: e.airtime_us, item: () });
         Some((e.start, e.item))
+    }
+
+    /// The frame from `pop_due` has been sent, or dropped.
+    pub fn tx_done(&mut self) {
+        self.on_air = None;
     }
 }
 
@@ -246,6 +256,22 @@ mod tests {
         // Overdue frames still come out; the caller decides what to do with them.
         assert_eq!(q.pop_due(2_500_000), Some((2_000_000, 2)));
         assert_eq!(q.len(), 1);
+    }
+
+    #[test]
+    fn on_air_blocks_until_done() {
+        let mut q: Queue<u8, 4> = Queue::new();
+        let now = 0;
+        q.enqueue(now, At::Asap, AIR, 0).unwrap();
+        let now = MIN_LEAD_US - HANDOVER_US;
+        assert_eq!(q.pop_due(now), Some((MIN_LEAD_US, 0)));
+        // The popped frame still occupies its airtime.
+        let after = MIN_LEAD_US + AIR + TX_MARGIN_US + TX_START_DELAY_US + TX_MARGIN_US;
+        assert_eq!(q.enqueue(now, At::Count(after - 1), AIR, 1), Err(Error::Collision));
+        assert_eq!(q.enqueue(now, At::Asap, AIR, 2), Ok(after));
+        // Done: a short frame fits in front of the queued one again.
+        q.tx_done();
+        assert_eq!(q.enqueue(now, At::Asap, 1_000, 3), Ok(now + MIN_LEAD_US));
     }
 
     #[test]
