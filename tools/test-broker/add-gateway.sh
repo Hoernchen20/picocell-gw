@@ -1,7 +1,7 @@
 #!/bin/sh
 # Adds a gateway (username = gateway ID from the board's USB console) to the test
-# broker, with the password the firmware was built with. A running broker reloads the
-# password file on SIGHUP.
+# broker, with the password from out/gateway-password (provisioned via gateway.conf).
+# A running broker reloads the password file on SIGHUP.
 #
 #   add-gateway.sh <gateway-id>
 set -eu

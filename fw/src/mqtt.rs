@@ -79,7 +79,8 @@ enum State {
     Backoff,
 }
 
-static STATE: AtomicU8 = AtomicU8::new(State::WaitNetwork as u8);
+/// Disabled until the task starts, which it does not in provisioning mode.
+static STATE: AtomicU8 = AtomicU8::new(State::Disabled as u8);
 
 fn set_state(s: State) {
     STATE.store(s as u8, Ordering::Relaxed);
@@ -88,7 +89,7 @@ fn set_state(s: State) {
 /// The connection state in words.
 pub fn state() -> &'static str {
     match STATE.load(Ordering::Relaxed) {
-        x if x == State::Disabled as u8 => "disabled (invalid port)",
+        x if x == State::Disabled as u8 => "disabled (provisioning mode)",
         x if x == State::WaitNetwork as u8 => "waiting for the network",
         x if x == State::WaitTime as u8 => "waiting for the time",
         x if x == State::Connecting as u8 => "connecting",
@@ -97,11 +98,11 @@ pub fn state() -> &'static str {
     }
 }
 
-type Topic = heapless::String<64>;
+type Topic = heapless::String<80>;
 
 fn topic(gateway_id: &str, suffix: &str) -> Topic {
     let mut t = Topic::new();
-    let _ = write!(t, "{}/gateway/{}/{}", config::TOPIC_PREFIX, gateway_id, suffix);
+    let _ = write!(t, "{}/gateway/{}/{}", config::get().topic_prefix(), gateway_id, suffix);
     t
 }
 
@@ -115,14 +116,11 @@ pub async fn mqtt_task(
     gateway_id: &'static str,
     bufs: &'static mut Buffers,
 ) -> ! {
-    let Some(port) = config::mqtt_port() else {
-        warn!("invalid PICOCELL_MQTT_PORT, MQTT disabled");
-        set_state(State::Disabled);
-        loop {
-            Timer::after_secs(3600).await;
-        }
-    };
+    let port = config::get().mqtt_port();
     let mut backoff = 1u64;
+    // CA slot to verify the broker with; after a failed handshake the other one, if set
+    // (CA rotation, sketch.md section 5.3).
+    let mut ca_slot = 0;
     loop {
         set_state(State::WaitNetwork);
         stack.wait_config_up().await;
@@ -135,10 +133,16 @@ pub async fn mqtt_task(
             }
         }
         set_state(State::Connecting);
-        match session(stack, port, gateway_id, bufs).await {
+        match session(stack, port, ca_slot, gateway_id, bufs).await {
             // Was connected: retry soon.
             Ok(()) => backoff = 1,
-            Err(e) => warn!("mqtt: {e}"),
+            Err(e) => {
+                warn!("mqtt: {e}");
+                if e == TLS_FAILED && !config::get().ca(1 - ca_slot).is_empty() {
+                    ca_slot = 1 - ca_slot;
+                    info!("mqtt: trying tls.ca{ca_slot}");
+                }
+            }
         }
         set_state(State::Backoff);
         info!("mqtt: reconnecting in {backoff} s");
@@ -147,17 +151,22 @@ pub async fn mqtt_task(
     }
 }
 
+const TLS_FAILED: &str = "tls handshake failed";
+
 /// One connection. `Ok` once the session was up and then ended, `Err` if it never came up.
 async fn session(
     stack: Stack<'static>,
     port: u16,
+    ca_slot: usize,
     gateway_id: &str,
     bufs: &mut Buffers,
 ) -> Result<(), &'static str> {
-    let addr = match resolve::resolve(stack, config::MQTT_HOST).await {
+    let cfg = config::get();
+    let host = cfg.mqtt_host();
+    let addr = match resolve::resolve(stack, host).await {
         Ok(a) => a,
         Err(e) => {
-            warn!("mqtt: {}: {e}", config::MQTT_HOST);
+            warn!("mqtt: {host}: {e}");
             return Err("broker address unknown");
         }
     };
@@ -173,12 +182,12 @@ async fn session(
     socket.set_timeout(Some(Duration::from_secs(u64::from(KEEP_ALIVE_S) * 3)));
     socket.connect((addr, port)).await.map_err(|_| "tcp connect failed")?;
 
-    let tls_config = TlsConfig::new().with_server_name(config::MQTT_HOST);
+    let tls_config = TlsConfig::new().with_server_name(host);
     let mut tls: TlsConnection<'_, _, Suite> =
         TlsConnection::new(socket, &mut bufs.tls_rx, &mut bufs.tls_tx);
-    tls.open(TlsContext::new(&tls_config, FailClosed::new(config::CA_DER)))
+    tls.open(TlsContext::new(&tls_config, FailClosed::new(cfg.ca(ca_slot))))
         .await
-        .map_err(|_| "tls handshake failed")?;
+        .map_err(|_| TLS_FAILED)?;
 
     let mut bump = BumpBuffer::new(&mut bufs.mqtt);
     let mut client: Client<'_, '_, _, _, 2, 4, 4, 0, 0, 0, 0> = Client::new(&mut bump);
@@ -192,7 +201,7 @@ async fn session(
         .keep_alive(KeepAlive::Seconds(NonZero::new(KEEP_ALIVE_S).unwrap()))
         .maximum_packet_size(NonZero::new(MAX_PACKET).unwrap())
         .user_name(MqttString::from_str(gateway_id).unwrap())
-        .password(MqttBinary::try_from(config::MQTT_PASSWORD.as_bytes()).unwrap())
+        .password(MqttBinary::try_from(cfg.mqtt_password().as_bytes()).unwrap())
         .will(will);
     client
         .connect(tls, &options, Some(MqttString::from_str(gateway_id).unwrap()))
@@ -200,7 +209,7 @@ async fn session(
         .map_err(|_| "mqtt connect refused")?;
     // Safety: the CONNACK info borrowing the buffer was dropped.
     unsafe { client.buffer_mut().reset() };
-    info!("mqtt: connected to {}", config::MQTT_HOST);
+    info!("mqtt: connected to {host}");
     set_state(State::Connected);
     // Uplinks are not buffered across outages (sketch.md section 6): their RX windows
     // have passed, so drop whatever queued up while disconnected.

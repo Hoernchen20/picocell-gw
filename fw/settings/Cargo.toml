@@ -1,0 +1,11 @@
+[package]
+name = "settings"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Provisioned configuration (keys, validation, stored form, PEM input) without I/O or
+# crypto, so it can be tested on the host:
+#   cargo test --target x86_64-unknown-linux-gnu
+[dependencies]
+heapless = "0.9"

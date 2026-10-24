@@ -36,10 +36,7 @@ pub async fn sntp_task(stack: Stack<'static>) -> ! {
 }
 
 async fn sync(stack: Stack<'_>) -> bool {
-    let Some(servers) = config::ntp_servers() else {
-        warn!("sntp: invalid PICOCELL_NTP");
-        return false;
-    };
+    let servers = config::get().ntp_servers();
     let mut samples: Vec<Sample, 3> = Vec::new();
     for name in &servers {
         let addr = match resolve::resolve(stack, name).await {

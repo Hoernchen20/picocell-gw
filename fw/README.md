@@ -8,11 +8,9 @@ Will, `GatewayStats` every 30 s (RX counters zero, duty-cycle load per sub-band)
 test `UplinkFrame` every 10 s (proprietary frame, made-up radio metadata), and
 `DownlinkFrame`s from `command/down` (Class A delay and Class C immediately timing)
 checked against the EU868 duty cycle, scheduled in the JIT queue and answered with a
-`DownlinkTxAck` on `event/ack`; log and commands on the USB console. No
-radio yet: a downlink is logged on the console at its start time instead of sent, and
-the RP2350 timer stands in for the SX1302 counter. No config store or provisioning
-yet; settings are build-time values in
-[.cargo/config.toml](.cargo/config.toml).
+`DownlinkTxAck` on `event/ack`; log, commands and provisioning on the USB console,
+config encrypted in flash. No radio yet: a downlink is logged on the console at its
+start time instead of sent, and the RP2350 timer stands in for the SX1302 counter.
 
 ## Requirements
 
@@ -27,32 +25,61 @@ mosquitto -c tools/test-broker/out/mosquitto.conf
 ```
 
 The broker listens on port 8883 on all interfaces; allow it in the firewall. The
-firmware looks up `PICOCELL_MQTT_HOST` (`mqtt.test`) in the hosts table
-(`PICOCELL_HOSTS`) and checks the certificate against that name, so no DNS entry is
-needed.
+gateway looks up `mqtt.host` (`mqtt.test`) in its hosts table (`net.hosts`) and checks
+the certificate against that name, so no DNS entry is needed.
 
 ## Build and flash
 
 ```sh
 cd fw
-PICOCELL_HOSTS=mqtt.test=<IP of the broker host> cargo run --release
+cargo run --release
 ```
 
 `cargo run` builds, writes `target/thumbv8m.main-none-eabihf/release/picocell-gw.uf2`
 and copies it to the board if it is mounted in BOOTSEL mode (hold BOOTSEL while
 plugging in USB). Otherwise copy the `.uf2` to the `RP2350` drive by hand.
 
-Other settings (see `.cargo/config.toml`) are overridden the same way, e.g.
-`PICOCELL_NET=10.0.0.20/24 PICOCELL_NET_GATEWAY=10.0.0.1`.
+## Configuration and provisioning
+
+The config lives in the last 64 KB of flash (behind the image, so flashing keeps it),
+encrypted with AES-128-GCM. For now the key is derived from the chip ID, which only
+keeps the secrets out of a plain flash dump; step 8 moves to a random key in OTP, and
+boards then need provisioning again. Without a complete config the gateway stays
+offline in provisioning mode and says so on the console.
+
+| Key | Default | |
+|---|---|---|
+| `net.mode` | `static` | `static` or `dhcp` |
+| `net.ipv4` | | address/prefix, e.g. `10.0.0.20/24`; required with `static` |
+| `net.gateway` | | default gateway |
+| `net.dns` | | up to 3 DNS servers, comma-separated; tried before the ones from DHCP |
+| `net.hosts` | | up to 4 `name=address` entries, checked before DNS |
+| `ntp.servers` | `0.pool.ntp.org,1.pool.ntp.org,2.pool.ntp.org` | up to 3, IP or host name |
+| `mqtt.host` | | broker host name (SNI and certificate check); required |
+| `mqtt.port` | `8883` | |
+| `mqtt.topic_prefix` | `eu868` | |
+| `mqtt.password` | | required; the username is the gateway ID |
+| `tls.ca0`, `tls.ca1` | | broker CA (PEM via `ca 0` / `ca 1`); `tls.ca0` required |
+
+With `tls.ca1` set, a failed TLS handshake makes the next attempt use the other slot
+(CA rotation). [../tools/provision.py](../tools/provision.py) sends a config file over
+the console and commits it; for the test broker:
+
+```sh
+tools/provision.py tools/test-broker/gateway.conf net.hosts=mqtt.test=<IP of the broker host>
+```
+
+[gateway.conf](../tools/test-broker/gateway.conf) uses DHCP and reads the password and
+CA from `tools/test-broker/out/`. On the console the same works by hand: `show`, `set
+<key> <value>`, `ca 0` and paste the PEM file, `commit`.
 
 ## Time
 
-The broker connection waits for the first SNTP result (`PICOCELL_NTP`, default
-`0.pool.ntp.org` … `2.pool.ntp.org`), because certificate dates cannot be checked
-without it. The pool names need DNS: from DHCP, or `PICOCELL_DNS` with a static
-address. Without internet access, point `PICOCELL_NTP` at a local server, e.g.
-`PICOCELL_NTP=10.0.0.1`. With three servers the median is used, so one wrong server
-is outvoted; a time before the build time is rejected.
+The broker connection waits for the first SNTP result (`ntp.servers`), because
+certificate dates cannot be checked without it. The pool names need DNS: from DHCP,
+or `net.dns` with a static address. Without internet access, point `ntp.servers` at a
+local server. With three servers the median is used, so one wrong server is outvoted;
+a time before the build time is rejected.
 
 ## Console and first connection
 
@@ -67,10 +94,18 @@ new lines appear live above the input line. Commands (`help` lists them):
 | `status` | firmware, gateway ID, MAC, IP, time, uptime, MQTT state, duty-cycle load |
 | `log` / `log off\|warn\|info` | show / set the live log level (`info` after boot, not saved) |
 | `log show [lines]` | the whole history, or its last lines, regardless of the level |
+| `show` | the config being edited; secrets as `***`, certificates as size and SHA-256 |
+| `set <key> <value>` | change a key in the edited config; `set mqtt.password` alone asks without echo |
+| `unset <key>` | back to the default (or none), also `tls.ca0` / `tls.ca1` |
+| `ca 0\|1` | paste a PEM certificate into `tls.ca0` / `tls.ca1` |
+| `clear` / `discard` | start from an empty config / drop the changes since the last commit |
+| `commit` | store the edited config and restart with it |
+| `erase` | delete the stored config and restart in provisioning mode |
 | `reboot` | restart |
 | `bootsel` | restart into the USB bootloader, so `cargo run` flashes without the button |
 
-Each command ends with `ok` or `error: ...` on its own line. MAC and gateway ID are
+Each command ends with `ok` or `error: ...` on its own line. Changes stay in RAM until
+`commit`; `status` notes uncommitted ones. MAC and gateway ID are
 derived from the RP2350 chip ID, so several boards can share a network; the boot
 message and `status` show them. Register each board with the broker using that ID:
 
@@ -142,6 +177,9 @@ encodes the published ones; its tests decode the output with `protoc`:
 
 [console](console) holds the log history ring and the line editor of the USB console:
 `cd console && cargo test --target x86_64-unknown-linux-gnu`.
+
+[settings](settings) holds the config keys, their checks, the stored form and the PEM
+input: `cd settings && cargo test --target x86_64-unknown-linux-gnu`.
 
 [jit](jit) is the downlink queue (too late/too early, collisions, first free slot,
 counter wrap), the LoRa airtime and the EU868 duty cycle:

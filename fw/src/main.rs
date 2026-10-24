@@ -4,7 +4,8 @@
 //! session with ChirpStack protobuf messages: retained ConnState with Last Will,
 //! GatewayStats every 30 s, a test UplinkFrame every 10 s, and DownlinkFrames scheduled
 //! in the JIT queue and acknowledged. No radio yet: downlinks are logged at their start.
-//! Log output and console commands on the USB-C port (CDC-ACM).
+//! Log output, console commands and provisioning on the USB-C port (CDC-ACM); the
+//! config lives encrypted in flash, and without one the gateway stays offline.
 
 #![no_std]
 #![no_main]
@@ -20,19 +21,20 @@ mod sntp;
 mod tls;
 
 use embassy_executor::Spawner;
-use embassy_net::{Stack, StackResources};
+use embassy_net::{Ipv4Cidr, Stack, StackResources, StaticConfigV4};
 use embassy_net_wiznet::chip::W5500;
 use embassy_net_wiznet::{Device, Runner, State};
 use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Input, Level, Output, Pull};
-use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, SPI0, TRNG, USB};
+use embassy_rp::flash::Flash;
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, DMA_CH2, SPI0, TRNG, USB};
 use embassy_rp::spi::{Async, Config as SpiConfig, Spi};
 use embassy_rp::trng::Trng;
 use embassy_rp::usb::Driver;
 use embassy_rp::{bind_interrupts, dma, trng, usb};
 use embassy_time::{Delay, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
-use log::{info, warn};
+use log::info;
 use panic_halt as _;
 use static_cell::StaticCell;
 use wire::time::Utc;
@@ -42,7 +44,7 @@ use crate::ids::Ids;
 use crate::mqtt::{Buffers, UPLINKS, Uplink};
 
 bind_interrupts!(struct Irqs {
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>, dma::InterruptHandler<DMA_CH2>;
     TRNG_IRQ => trng::InterruptHandler<TRNG>;
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
 });
@@ -100,7 +102,10 @@ async fn net_log_task(stack: Stack<'static>) -> ! {
     loop {
         stack.wait_config_up().await;
         if let Some(c) = stack.config_v4() {
-            info!("network up: {}, gateway {:?}", c.address, c.gateway);
+            match c.gateway {
+                Some(g) => info!("network up: {}, gateway {g}", c.address),
+                None => info!("network up: {}, no gateway", c.address),
+            }
         }
         stack.wait_config_down().await;
         info!("network down");
@@ -124,6 +129,14 @@ async fn main(spawner: Spawner) {
         ids.gateway_id, m[0], m[1], m[2], m[3], m[4], m[5]
     );
 
+    config::init(Flash::new(p.FLASH, p.DMA_CH2, Irqs)).await;
+    let usb = Driver::new(p.USB, Irqs);
+    if !config::provisioned() {
+        // Offline until configured on the console (sketch.md section 5.4).
+        spawner.spawn(console::console_task(usb, console::Context { stack: None, ids }).unwrap());
+        return;
+    }
+
     // W5500 on the EVB: SPI0 GP16 MISO, GP17 CS, GP18 SCK, GP19 MOSI, GP20 RST, GP21 INT.
     let mut spi_cfg = SpiConfig::default();
     spi_cfg.frequency = 50_000_000;
@@ -144,21 +157,16 @@ async fn main(spawner: Spawner) {
     .unwrap();
     spawner.spawn(ethernet_task(runner).unwrap());
 
-    let net_config = match config::net() {
+    let net_config = match config::get().net() {
         Some(Net::Dhcp) => embassy_net::Config::dhcpv4(Default::default()),
-        Some(Net::Static(c)) => embassy_net::Config::ipv4_static(c),
-        None => {
-            // Stay offline (sketch.md section 3.4); the status task keeps reporting.
-            warn!("invalid PICOCELL_NET, network disabled");
-            embassy_net::Config::default()
-        }
+        Some(Net::Static { address, prefix, gateway }) => embassy_net::Config::ipv4_static(StaticConfigV4 {
+            address: Ipv4Cidr::new(address, prefix),
+            gateway,
+            dns_servers: Default::default(),
+        }),
+        // Static without an address; `provisioned()` rules that out.
+        None => embassy_net::Config::default(),
     };
-    if config::hosts().is_none() {
-        warn!("invalid PICOCELL_HOSTS, hosts table ignored");
-    }
-    if config::dns_servers().is_none() {
-        warn!("invalid PICOCELL_DNS, DNS disabled");
-    }
 
     // DHCP, MQTT (TCP), SNTP (UDP) and one DNS lookup each from the MQTT and SNTP tasks.
     static RESOURCES: StaticCell<StackResources<6>> = StaticCell::new();
@@ -170,7 +178,7 @@ async fn main(spawner: Spawner) {
     );
     spawner.spawn(net_task(runner).unwrap());
     spawner.spawn(net_log_task(stack).unwrap());
-    spawner.spawn(console::console_task(Driver::new(p.USB, Irqs), console::Context { stack, ids }).unwrap());
+    spawner.spawn(console::console_task(usb, console::Context { stack: Some(stack), ids }).unwrap());
     spawner.spawn(sntp::sntp_task(stack).unwrap());
 
     static BUFFERS: StaticCell<Buffers> = StaticCell::new();

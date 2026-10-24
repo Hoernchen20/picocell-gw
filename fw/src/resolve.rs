@@ -21,8 +21,6 @@ const TRIES: usize = 2;
 
 #[derive(Debug)]
 pub enum Error {
-    /// `PICOCELL_HOSTS` or `PICOCELL_DNS` is invalid.
-    Config,
     /// No hosts entry and no DNS server configured.
     NoServer,
     /// DNS failed and no earlier answer is known; the last server's error.
@@ -34,7 +32,6 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Config => f.write_str("invalid PICOCELL_HOSTS or PICOCELL_DNS"),
             Error::NoServer => f.write_str("no hosts entry and no DNS server"),
             Error::Dns(e) => write!(f, "{e}"),
             Error::Timeout => f.write_str("no DNS answer"),
@@ -88,7 +85,7 @@ pub async fn resolve(stack: Stack<'_>, name: &str) -> Result<Ipv4Address, Error>
     if let Ok(addr) = Ipv4Addr::from_str(name) {
         return Ok(addr);
     }
-    let hosts = config::hosts().ok_or(Error::Config)?;
+    let hosts = config::get().hosts();
     if let Some((_, addr)) = hosts.iter().find(|(n, _)| same_name(n, name)) {
         return Ok(*addr);
     }
@@ -97,7 +94,7 @@ pub async fn resolve(stack: Stack<'_>, name: &str) -> Result<Ipv4Address, Error>
         return Ok(addr);
     }
 
-    let mut servers = config::dns_servers().ok_or(Error::Config)?;
+    let mut servers = config::get().dns_servers();
     if let Some(c) = stack.config_v4() {
         for s in c.dns_servers {
             if !servers.contains(&s) {

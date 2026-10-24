@@ -1,0 +1,155 @@
+#!/usr/bin/env python3
+"""Provisions a picocell-gw over its USB console (sketch.md section 7).
+
+    tools/provision.py [-d DEVICE] [--no-commit] CONFIG [key=value ...]
+
+CONFIG has one "key = value" per line; lines starting with "#" are comments. A value
+"@path" is read from that file, relative to CONFIG: tls.ca0 and tls.ca1 take a PEM
+certificate this way, secrets can stay in their own file. key=value arguments
+override CONFIG (their @paths are relative to the current directory).
+
+The edited config starts empty ("clear"), so keys not given keep their defaults.
+Then "show" is printed (secrets as ***) and "commit" stores the config, upon which
+the gateway restarts with it. With --no-commit the changes stay uncommitted on the
+console, to look at or "discard" there.
+
+DEVICE defaults to the one picocell-gw console under /dev/serial/by-id/.
+"""
+
+import argparse
+import glob
+import os
+import select
+import sys
+import time
+import tty
+
+PROMPT = b"picocell> "
+DEVICES = "/dev/serial/by-id/usb-picocell_picocell-gw_console_*-if00"
+CA_KEYS = ("tls.ca0", "tls.ca1")
+
+
+def die(msg):
+    sys.exit(f"provision: {msg}")
+
+
+def load(path, overrides):
+    """The config as an ordered {key: value}, @files read."""
+    items = {}
+    # Directory that @paths are relative to; the override's for an overridden key.
+    bases = {}
+    with open(path) as f:
+        for n, line in enumerate(f, 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, sep, value = line.partition("=")
+            if not sep:
+                die(f"{path}:{n}: key = value expected")
+            items[key.strip()] = value.strip()
+            bases[key.strip()] = os.path.dirname(path)
+    for o in overrides:
+        key, sep, value = o.partition("=")
+        if not sep:
+            die(f"{o}: key=value expected")
+        items[key.strip()] = value.strip()
+        bases[key.strip()] = "."
+    for key, base in bases.items():
+        value = items[key]
+        if value.startswith("@"):
+            name = os.path.join(base, value[1:])
+            try:
+                with open(name) as f:
+                    value = f.read()
+            except OSError as e:
+                die(f"{key}: {e}")
+            items[key] = value if key in CA_KEYS else value.strip()
+    for key in CA_KEYS:
+        if key in items and "-----BEGIN CERTIFICATE-----" not in items[key]:
+            die(f"{key}: a PEM certificate file (@path) expected")
+    return items
+
+
+class Console:
+    def __init__(self, path):
+        self.fd = os.open(path, os.O_RDWR | os.O_NOCTTY)
+        tty.setraw(self.fd)
+        self.buf = b""
+
+    def read_until(self, marker, timeout):
+        end = time.monotonic() + timeout
+        while marker not in self.buf:
+            left = end - time.monotonic()
+            if left <= 0:
+                die(f"no answer from the gateway (waiting for {marker!r})")
+            if select.select([self.fd], [], [], left)[0]:
+                self.buf += os.read(self.fd, 4096)
+        i = self.buf.index(marker) + len(marker)
+        out, self.buf = self.buf[:i], self.buf[i:]
+        return out
+
+    def run(self, line, more=(), timeout=10):
+        """Sends a command and further input lines; returns its output lines and the
+        error message, or None after "ok"."""
+        for l in (line, *more):
+            os.write(self.fd, l.encode() + b"\r")
+        lines = []
+        while True:
+            text = self.read_until(b"\r\n", timeout)[:-2].decode(errors="replace")
+            if text == "ok":
+                return lines, None
+            if text.startswith("error: "):
+                return lines, text[len("error: "):]
+            # Skip the echo of the command.
+            if not text.startswith(PROMPT.decode()):
+                lines.append(text)
+
+
+def main():
+    p = argparse.ArgumentParser(description="Provision a picocell-gw over its USB console.")
+    p.add_argument("-d", "--device", help="console device (default: the one under /dev/serial/by-id/)")
+    p.add_argument("--no-commit", action="store_true", help="leave the changes uncommitted")
+    p.add_argument("config")
+    p.add_argument("overrides", nargs="*", metavar="key=value")
+    a = p.parse_args()
+
+    items = load(a.config, a.overrides)
+    device = a.device
+    if device is None:
+        found = glob.glob(DEVICES)
+        if len(found) != 1:
+            die(f"{len(found)} consoles found, pass -d")
+        device = found[0]
+
+    c = Console(device)
+    # Opening the port replays the log history, then the banner and the prompt.
+    c.read_until(b'"help" for commands', 5)
+    c.read_until(PROMPT, 2)
+
+    def run(line, more=(), shown=None):
+        out, err = c.run(line, more)
+        if err is not None:
+            # Leave the gateway as it was.
+            c.run("discard")
+            c.run("log info")
+            die(f"{shown or line}: {err}")
+        return out
+
+    run("log off")
+    run("clear")
+    for key, value in items.items():
+        if key in CA_KEYS:
+            run(f"ca {key[-1]}", value.splitlines(), shown=key)
+        else:
+            run(f"set {key} {value}", shown=f"set {key}")
+    print("\n".join(run("show")))
+    if a.no_commit:
+        run("log info")
+        print('not committed; "commit" or "discard" on the console')
+        return
+    run("commit")
+    print("committed, the gateway restarts with this config")
+
+
+if __name__ == "__main__":
+    main()

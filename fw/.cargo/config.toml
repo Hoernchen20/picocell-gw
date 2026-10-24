@@ -6,26 +6,3 @@ runner = "python3 ../tools/elf2uf2-rp2350.py"
 
 [build]
 target = "thumbv8m.main-none-eabihf"
-
-# Build-time settings until the config store and USB provisioning exist (sketch.md
-# section 7). An environment variable of the same name overrides each value.
-[env]
-# Broker CA certificate (DER), relative to fw/.
-PICOCELL_CA_DER = "../tools/test-broker/out/ca.der"
-# "dhcp" or a static address with prefix, e.g. "10.0.0.20/24".
-PICOCELL_NET = "dhcp"
-# Default gateway for a static address; empty = none.
-PICOCELL_NET_GATEWAY = ""
-# Broker host name: SNI and certificate check.
-PICOCELL_MQTT_HOST = "mqtt.test"
-# Hosts table, checked before DNS: "name=address,..." (up to 4 entries).
-PICOCELL_HOSTS = "mqtt.test=192.168.1.10"
-# DNS servers, comma-separated (up to 3); tried before the ones from DHCP.
-PICOCELL_DNS = ""
-# SNTP servers (up to 3): IP addresses or host names. The broker connection waits
-# for the first time sync.
-PICOCELL_NTP = "0.pool.ntp.org,1.pool.ntp.org,2.pool.ntp.org"
-PICOCELL_MQTT_PORT = "8883"
-# The username is the gateway ID, printed on the USB console at boot.
-PICOCELL_MQTT_PASSWORD = "secret-pw"
-PICOCELL_TOPIC_PREFIX = "eu868"

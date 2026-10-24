@@ -3,14 +3,15 @@
 # signs the broker certificate directly (sketch.md 4.1), TLS 1.3 only, password file
 # and the per-gateway ACL. For development only: the CA key stays in out/.
 #
-#   setup.sh [broker-hostname]      default: mqtt.test (= PICOCELL_MQTT_HOST)
+#   setup.sh [broker-hostname]      default: mqtt.test (= mqtt.host in gateway.conf)
 #   add-gateway.sh <gateway-id>     add a board (ID from its USB console)
 #   mosquitto -c out/mosquitto.conf
 set -eu
 
 HOST=${1:-mqtt.test}
 DIR=$(cd "$(dirname "$0")" && pwd)/out
-PASSWORD=${PICOCELL_MQTT_PASSWORD:-secret-pw}
+# Gateway password, provisioned from out/gateway-password (gateway.conf).
+PASSWORD=${GATEWAY_PASSWORD:-secret-pw}
 
 if [ -e "$DIR" ]; then
     echo "$DIR exists; remove it to start over" >&2

@@ -752,16 +752,27 @@ Keep a DNP footprint on the PCB.
   too-late checks.
 - Radio calibration: extract `rssi_offset` and the TX gain LUT from Seeed's
   `global_conf.json.sx1250.EU868`; define the TX power cap on USB power (or no TX).
-- USB console protocol: entering secrets, uploading a CA (DER). Done: one CDC-ACM
+- USB console protocol: done. One CDC-ACM
   port for log and commands (`fw/src/console.rs`, logic host-tested in
   `fw/console`). 8 KB RAM log history replayed when a terminal opens the port (any
   control request, then 300 ms quiet: DTR alone is unreliable, minicom clears HUPCL
   so DTR stays high after close), then live output above the redrawn input line; `log off|warn|info` (RAM only),
   `log show [n]`, `status`, `reboot`, `bootsel`. Every command ends with `ok` or
   `error: ...` on its own line, so a provisioning script can send `log off` and read
-  replies. +9 KB text, +8 KB RAM.
-- Config schema: key layout in `sequential-storage`, schema version and migration,
-  defaults.
+  replies. +9 KB text, +8 KB RAM. Config editing: `show` (secrets `***`, CAs as
+  size + SHA-256), `set`, `set mqtt.password` without echo, `unset`, `ca 0|1` (PEM
+  pasted line by line), `clear`, `discard`, `commit` (store + restart), `erase`;
+  `tools/provision.py` sends a config file.
+- Config schema: done for the keys in use (`fw/settings`, host-tested). One
+  `sequential-storage` map item (key 1) at 0x1F0000: format byte, random 96-bit
+  nonce, AES-128-GCM over the settings (format byte, `key=value` text lines, two CA
+  slots as DER, ≤ 1 KB each), tag; read back after writing. Every value is checked
+  on `set` and on load; an unknown key or format makes the stored config unusable
+  (provisioning mode) rather than silently dropped. Dev key = HMAC-SHA-256 of the
+  chip ID, until the OTP key (step 8). Keys default as in section 7 (`net.mode`
+  static); `mqtt.username` is fixed to the gateway ID. Not yet: `net.mac`, radio
+  keys, `location`. The build-time `PICOCELL_*` settings are gone. +27 KB text,
+  +22 KB RAM.
 - Dev vs. production flow: OTP writes (boot key hash, AES key, SWD disable) are
   irreversible; define a dev build that runs unsigned, without the OTP key and with
   SWD enabled, so dev boards are not locked by accident.
