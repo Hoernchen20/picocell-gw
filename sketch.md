@@ -621,7 +621,8 @@ Keep a DNP footprint on the PCB.
   signing key kept offline.
 - OTA via boot ROM A/B partitions (988 KB each in 2 MB flash, 64 KB config, see 3.1),
   TBYB boot, `explicit_buy` only after successful broker connection, otherwise
-  roll back (see 3.1).
+  roll back (see 3.1). The image arrives in chunks over MQTT on `command/ota`, see
+  8.1 (8b).
 - Anti-rollback version in OTP; up to four boot keys allow key rotation.
 - USB BOOTSEL/UF2 stays enabled as recovery path (only signed images boot).
 
@@ -645,7 +646,7 @@ Keep a DNP footprint on the PCB.
   switching the broker. Each slot holds one root that signs the broker
   certificate directly.
 - New CA only via signed firmware or signed config message, never accepted unsigned
-  over MQTT.
+  over MQTT. Config messages are signed with a separate P-256 key, see 8.1 (8e).
 - If the CA expired before rotation: USB recovery.
 
 ### 5.4 Recovery
@@ -739,7 +740,100 @@ Keep a DNP footprint on the PCB.
 5. JIT queue: Class A delay downlinks + `DownlinkTxAck`.
 6. Class C unicast + Class C multicast (Delay), duty-cycle tracking; FUOTA test.
 7. Config store + encryption, USB provisioning, remote credential change.
-8. Secure boot, OTP key, signed A/B OTA, CA rotation.
+8. Secure boot, OTP key, signed A/B OTA, CA rotation (plan in 8.1).
+
+### 8.1 Step 8 plan
+
+Done one milestone at a time; each one is testable on its own. Starting point
+(2026-10-25): the image has no IMAGE_DEF of its own (embassy-rp's default block:
+unsigned, no TBYB, no rollback version), no partition table, no watchdog; config
+reads go through XIP; the config key is HMAC(chip ID); `picotool` is not installed
+(`tools/elf2uf2-rp2350.py` stands in for it); `tls.ca0`/`tls.ca1` with fallback to
+the other slot after a failed handshake exist.
+
+Ground rule: **no board gets locked.** There are only two boards, and both stay
+dev boards: no OTP write on them, ever. Secure boot with a test key would not
+brick a board, but it is permanent (only images signed with that key boot from then
+on), so the steps marked "lock board" wait for a third board bought for that
+purpose. Everything else runs on unlocked boards.
+
+Dev and production build:
+
+| | Dev (default `cargo run`) | Production (`--features production`) |
+|---|---|---|
+| Image | unsigned, hash only | `picotool seal --sign` |
+| Config key | HMAC(chip ID), as now | random AES-128 key in OTP |
+| OTP writes | none, the code is compiled out | only the AES key page, only via an explicit console command |
+| SWD | untouched | disabled in OTP by the lock procedure (last step) |
+| Console | full access | full access (password protection: see 9.1) |
+
+- Boot key hash, CRIT flags and debug disable are written from the host with
+  `picotool otp` in a separate lock procedure, never by the firmware. The firmware
+  only writes the AES key, generated on the device from the TRNG; it never leaves
+  the device.
+- Production firmware creates the AES key only when secure boot is already on
+  (otherwise unsigned code could read it).
+- `status` and the `GatewayStats` metadata show `dev`/`prod` and, read from OTP at
+  runtime, whether secure boot, the OTP key and SWD disable are set.
+
+Milestones:
+
+- **8a. Partition table and flash driver** (dev boards, reversible)
+  - Install `picotool`; partition table from 3.1 as JSON in the repo.
+  - Own IMAGE_DEF: secure exe, TBYB flag, rollback version from `Cargo.toml`.
+  - `flash_op`-based `embedded-storage` read driver for the config partition and
+    the inactive slot (see 3.1); the config store moves to it.
+  - On hardware: config still loads; UF2 drag-and-drop with the table works; find
+    out which slot the ROM writes a UF2 to. Extend `tools/hil-test.py`.
+- **8b. A/B OTA with TBYB** (dev boards, unsigned images with hash)
+  - Transport: chunks over MQTT. `command/ota` first gets a header (size, SHA-256,
+    rollback version), then chunks with an offset (≤ 8 KB, below the 12 KB packet
+    limit); the gateway answers on `state/ota` (progress, error, done). The ACL
+    already restricts `command/#` to admin. Retained messages refused, as for
+    `command/credentials`.
+  - Write the inactive slot, check the SHA-256, `reboot` with FLASH_UPDATE.
+  - `explicit_buy` after the first successful broker connection. The firmware takes
+    over the watchdog (settles the watchdog point in 9.1) and has its own buy
+    deadline (~5 min); missed → reboot → ROM boots the old slot. Check on hardware:
+    the ROM's 16.7 s TBYB watchdog against DHCP + SNTP + TLS time, and that any
+    reboot before the buy falls back.
+  - Host tool `tools/ota-push.py`.
+  - Tests: good update, truncated image, wrong SHA-256, image that never connects
+    (roll back), reboot during the transfer.
+- **8c. Signing**
+  - secp256k1 test signing key, committed as dev material; the production key is
+    separate and kept offline.
+  - Production runner wraps `picotool seal --sign`; check the signature on the
+    host (script against the public key) so the tooling is tested without OTP.
+  - Lock board only: test key hash into BOOTKEY0, then `SECURE_BOOT_ENABLE`, SWD
+    stays on. Tests: unsigned UF2 refused, signed boots, OTA with a bad signature
+    rolls back, lower rollback version refused, `explicit_buy` bumps the OTP
+    rollback thermometer. Slots 1–3 stay free for key rotation (revocation via
+    `KEY_INVALID`).
+- **8d. OTP AES key**
+  - Key source abstraction: dev = HMAC(chip ID), production = OTP page.
+  - At boot read the key page, then soft-lock it until reset. Unwritten page (all
+    zero) → no key → provisioning mode (5.4). Read and soft lock are testable on
+    the dev boards, since the soft lock is gone after a reset.
+  - Console command `otp-key init` (production only, refused without secure boot,
+    asks for confirmation): 16 random bytes, write with ECC, read back, set the
+    page locks (no bootloader/non-secure access, so `picotool` in BOOTSEL cannot
+    read it; secure read-only). Lock board only.
+  - No migration: boards are provisioned again (as the fw README says).
+- **8e. CA rotation** (dev boards)
+  - Signed `command/ca`: ECDSA P-256 with its own config-signing key (separate
+    from the boot key; the firmware already has P-256 verify via `embassy-crypto`).
+    The public key is compiled into the image; a sequence number stored with the
+    config blocks replays of an old CA. Writes `tls.ca1`.
+  - When handshakes succeed only with ca1, ca1 becomes ca0.
+  - New CAs can also come with a signed image.
+  - Host tool to sign and send; test with `tools/test-broker`: issue a second CA,
+    roll it out, switch the broker.
+- **8f. Production lock procedure** (last, lock board or real production boards)
+  - `tools/lock-board.py`, each step separately with a confirmation: check the
+    board, boot key hash + secure boot, flash the signed image, `otp-key init`,
+    provision, debug disable + glitch detector.
+  - Write the procedure down in section 5.
 
 ## 9. Open points
 
@@ -784,9 +878,15 @@ Keep a DNP footprint on the PCB.
   static); `mqtt.username` is fixed to the gateway ID. Not yet: `net.mac`, radio
   keys, `location`. The build-time `PICOCELL_*` settings are gone. +27 KB text,
   +22 KB RAM.
-- Dev vs. production flow: OTP writes (boot key hash, AES key, SWD disable) are
-  irreversible; define a dev build that runs unsigned, without the OTP key and with
-  SWD enabled, so dev boards are not locked by accident.
+- Dev vs. production flow: decided, see 8.1 (dev build unsigned, no OTP key, no OTP
+  writes, SWD untouched; both current boards stay dev boards).
+- Console access protection: the console has full access in both builds, so anyone
+  with USB access can read the log and change the config (e.g. point `mqtt.host` and
+  `tls.ca0` at their own broker and receive the password). To do: password-protected
+  console login, e.g. a console password hash in the encrypted config, required
+  before config commands (or all commands except `status`/`help`), with a lockout
+  delay after wrong attempts; settle how a forgotten password is recovered
+  (`erase` without login?).
 - LED blink patterns for the states listed in 2.4.
 - Stats interval and contents; whether to support `command/config`.
 - Watchdog timeout and which tasks feed it; whether to use the second core.
