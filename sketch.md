@@ -785,6 +785,22 @@ Milestones:
     the inactive slot (see 3.1); the config store moves to it.
   - On hardware: config still loads; UF2 drag-and-drop with the table works; find
     out which slot the ROM writes a UF2 to. Extend `tools/hil-test.py`.
+  - Status (2026-10-25): done, tested on one board (`tools/hil-test.py` 15/15, remote
+    password change there and back). `fw/partition-table.json` (config partition:
+    secure rw only, no UF2 family, no bootloader access). IMAGE_DEF in
+    `fw/src/boot.rs` (embassy-rp `imagedef-none`): secure exe + TBYB. The runner
+    seals with `picotool seal --hash --major --minor` (version from `Cargo.toml`); no
+    rollback version in dev builds, in case a buy with one writes the OTP rollback
+    rows. Until 8b the firmware calls `explicit_buy` at boot when the ROM reports a
+    buy pending; the ROM clears the flag in the last (hash) block and the hash still
+    verifies. `fw/src/flash.rs`: read, erase and program via `flash_op` (storage
+    address space, secure, XIP-based addresses), in a critical section; the config
+    store uses it. `status` shows the ROM's boot info.
+  - Findings: the table has to be loaded with `picotool load`; a `pt.uf2` copied
+    to the BOOTSEL drive is ignored (no reboot, nothing written). With the table a
+    UF2 copy goes to the slot that is not running (first copy B, then A, B, ...).
+    A trial boot reports buy pending (0x01) and survives the 16.7 s watchdog once
+    bought. Still open for 8b: a trial that is not bought falls back.
 - **8b. A/B OTA with TBYB** (dev boards, unsigned images with hash)
   - Transport: chunks over MQTT. `command/ota` first gets a header (size, SHA-256,
     rollback version), then chunks with an offset (≤ 8 KB, below the 12 KB packet

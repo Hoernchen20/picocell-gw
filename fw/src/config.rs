@@ -8,17 +8,15 @@
 //! out of a plain flash dump. Step 8 replaces it with a random key in OTP (sketch.md
 //! section 4.2); configs stored before then have to be provisioned again.
 //!
-//! The partition lies behind the 988 KB image, so flashing firmware keeps it. Without a
-//! partition table XIP maps the whole flash, so reads reach the partition directly;
-//! with the A/B table (step 8) they need ROM `flash_op` (sketch.md section 3.1).
+//! The partition lies behind the two 988 KB slots, so flashing firmware keeps it. All
+//! access goes through ROM `flash_op` (`crate::flash`): with the A/B partition table XIP
+//! only maps the running slot.
 
 use core::cell::RefCell;
 use core::ops::Range;
 use core::str::FromStr;
 
 use embassy_crypto::{Aes128Gcm, HmacSha256};
-use embassy_rp::flash::{Async, Flash};
-use embassy_rp::peripherals::FLASH;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::blocking_mutex::Mutex as BlockingMutex;
 use embassy_sync::mutex::Mutex;
@@ -32,6 +30,7 @@ use static_cell::StaticCell;
 
 pub use settings::{Net, Settings, check_password};
 
+use crate::flash::Partition;
 use crate::tls;
 
 /// Unix time of the build; SNTP results before it are rejected.
@@ -41,9 +40,7 @@ pub fn build_time() -> u64 {
     u64::from_str(BUILD_TIME).unwrap_or(0)
 }
 
-pub const FLASH_SIZE: usize = 2 * 1024 * 1024;
-pub type ConfigFlash = Flash<'static, FLASH, Async, FLASH_SIZE>;
-
+/// Physical flash range of the config partition (`fw/partition-table.json`).
 const PARTITION: Range<u32> = 0x1F_0000..0x20_0000;
 /// Map item keys.
 const SETTINGS: u8 = 1;
@@ -64,7 +61,7 @@ fn aad(item: u8) -> &'static [u8] {
 
 pub type Password = String<64>;
 
-type Map = MapStorage<u8, ConfigFlash, Cache<Uncached, Uncached, Uncached, u8>>;
+type Map = MapStorage<u8, Partition, Cache<Uncached, Uncached, Uncached, u8>>;
 
 struct Store {
     map: Map,
@@ -160,12 +157,16 @@ impl Store {
 
 /// Opens the config partition and loads the settings; runs before anything calls
 /// `get()`. Without a complete config the gateway stays in provisioning mode.
-pub async fn init(flash: ConfigFlash) {
+pub async fn init() {
     let chip_id = embassy_rp::otp::get_chipid().unwrap_or(0);
     let key = HmacSha256::mac(b"picocell-gw dev config key", &chip_id.to_be_bytes());
     static CELL: StaticCell<Store> = StaticCell::new();
     let store = CELL.init(Store {
-        map: MapStorage::new(flash, const { MapConfig::new(PARTITION) }, Cache::new_uncached()),
+        map: MapStorage::new(
+            Partition::new(PARTITION),
+            const { MapConfig::new(0..PARTITION.end - PARTITION.start) },
+            Cache::new_uncached(),
+        ),
         aes: Aes128Gcm::new(key[..16].try_into().unwrap()),
         record: [0; RECORD_MAX],
         plain: [0; ENCODED_MAX],

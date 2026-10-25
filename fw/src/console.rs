@@ -38,7 +38,7 @@ use wire::time::Utc;
 
 use crate::config::Settings;
 use crate::ids::Ids;
-use crate::{clock, config, downlink, mqtt};
+use crate::{boot, clock, config, downlink, mqtt};
 
 type Usb = Driver<'static, USB>;
 
@@ -397,7 +397,7 @@ async fn session(
 }
 
 const HELP: &str = "\
-status               firmware, network, time, MQTT and duty-cycle state\r\n\
+status               firmware, boot slot, network, time, MQTT and duty-cycle state\r\n\
 log                  live log level\r\n\
 log off|warn|info    set the live log level (until reboot)\r\n\
 log show [lines]     print the log history, or its last lines\r\n\
@@ -580,6 +580,10 @@ async fn status(o: &mut Out<'_>, ctx: &Context, pending: &Settings) -> Result<()
     let up = Instant::now().as_secs();
     let cfg = config::get();
     out!(o, "firmware   {}, built {}\r\n", env!("CARGO_PKG_VERSION"), Utc(config::build_time()))?;
+    match boot::info() {
+        Some(b) => out!(o, "boot       {b}\r\n")?,
+        None => o.write(b"boot       unknown\r\n").await?,
+    }
     out!(o, "gateway id {}\r\n", ctx.ids.gateway_id)?;
     match cfg.missing() {
         None => o.write(b"config     stored").await?,

@@ -1494,6 +1494,7 @@ dependencies = [
  "embassy-usb",
  "embedded-hal-bus",
  "embedded-io-async 0.7.0",
+ "embedded-storage-async",
  "embedded-tls",
  "heapless 0.9.3",
  "jit",

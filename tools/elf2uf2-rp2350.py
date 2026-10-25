@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
-"""Convert an RP2350 ELF to UF2 (family RP2350_ARM_S) and copy it to a BOOTSEL drive.
+"""Seal an RP2350 ELF, convert it to UF2 (family RP2350_ARM_S) and copy it to a BOOTSEL
+drive.
 
 Used as the cargo runner in fw/.cargo/config.toml, so `cargo run --release` builds,
-converts and, if a board in BOOTSEL mode is mounted (drive "RP2350"), flashes it.
-Stand-in for `picotool uf2 convert` / `picotool load`.
+seals, converts and, if a board in BOOTSEL mode is mounted (drive "RP2350"), flashes
+it. Sealing (`picotool seal --hash`, sketch.md section 8.1) adds the SHA-256 and the
+major/minor version from fw/Cargo.toml as a second IMAGE_DEF; no rollback version in
+dev builds. picotool is taken from $PICOTOOL, the PATH or ~/.local/bin.
 
     elf2uf2-rp2350.py <firmware.elf> [--no-copy]
 """
 
 import getpass
+import os
+import re
 import shutil
+import subprocess
 import struct
 import sys
 from pathlib import Path
@@ -21,6 +27,29 @@ UF2_FLAG_FAMILY_ID_PRESENT = 0x00002000
 RP2350_ARM_S_FAMILY_ID = 0xE48BFF59
 PAGE = 256
 FLASH_START, FLASH_END = 0x10000000, 0x12000000
+CARGO_TOML = Path(__file__).resolve().parent.parent / "fw/Cargo.toml"
+
+
+def picotool():
+    found = os.environ.get("PICOTOOL") or shutil.which("picotool")
+    if not found and (Path.home() / ".local/bin/picotool").is_file():
+        found = str(Path.home() / ".local/bin/picotool")
+    if not found:
+        sys.exit("picotool not found: install it (fw/README.md) or set PICOTOOL")
+    return found
+
+
+def seal(elf_path: Path) -> Path:
+    """Writes <elf>.sealed.elf with hash and version; returns its path."""
+    m = re.search(r'^version = "(\d+)\.(\d+)\.\d+"', CARGO_TOML.read_text(), re.M)
+    if not m:
+        sys.exit(f"no version in {CARGO_TOML}")
+    out = elf_path.with_name(elf_path.name + ".sealed.elf")
+    cmd = [picotool(), "seal", "--quiet", "--hash", str(elf_path), "-t", "elf", str(out), "-t", "elf",
+           "--major", m[1], "--minor", m[2]]
+    if subprocess.run(cmd).returncode != 0:
+        sys.exit("picotool seal failed")
+    return out
 
 
 def load_segments(elf: bytes):
@@ -74,7 +103,7 @@ def main():
     if len(args) != 1:
         sys.exit(__doc__)
     elf_path = Path(args[0])
-    pages = to_pages(load_segments(elf_path.read_bytes()))
+    pages = to_pages(load_segments(seal(elf_path).read_bytes()))
     uf2_path = elf_path.with_suffix(".uf2")
     uf2_path.write_bytes(to_uf2(pages))
     print(f"{uf2_path}: {len(pages)} blocks, {len(pages) * PAGE // 1024} KiB")

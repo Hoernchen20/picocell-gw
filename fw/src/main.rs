@@ -10,10 +10,12 @@
 #![no_std]
 #![no_main]
 
+mod boot;
 mod clock;
 mod config;
 mod console;
 mod downlink;
+mod flash;
 mod ids;
 mod mqtt;
 mod resolve;
@@ -26,8 +28,7 @@ use embassy_net_wiznet::chip::W5500;
 use embassy_net_wiznet::{Device, Runner, State};
 use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Input, Level, Output, Pull};
-use embassy_rp::flash::Flash;
-use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, DMA_CH2, SPI0, TRNG, USB};
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, SPI0, TRNG, USB};
 use embassy_rp::spi::{Async, Config as SpiConfig, Spi};
 use embassy_rp::trng::Trng;
 use embassy_rp::usb::Driver;
@@ -44,7 +45,7 @@ use crate::ids::Ids;
 use crate::mqtt::{Buffers, UPLINKS, Uplink};
 
 bind_interrupts!(struct Irqs {
-    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>, dma::InterruptHandler<DMA_CH2>;
+    DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
     TRNG_IRQ => trng::InterruptHandler<TRNG>;
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
 });
@@ -129,7 +130,8 @@ async fn main(spawner: Spawner) {
         ids.gateway_id, m[0], m[1], m[2], m[3], m[4], m[5]
     );
 
-    config::init(Flash::new(p.FLASH, p.DMA_CH2, Irqs)).await;
+    boot::buy();
+    config::init().await;
     let usb = Driver::new(p.USB, Irqs);
     if !config::provisioned() {
         // Offline until configured on the console (sketch.md section 5.4).

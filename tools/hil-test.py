@@ -8,7 +8,8 @@ Needs the board on USB and Ethernet, and the test broker running on this machine
 
 1. --flash: builds fw/ (release), sends "bootsel", waits for the RP2350 drive (desktop
    automount) and copies the UF2 to it.
-2. Console: banner, "help", errors for an unknown command and key, "status" fields.
+2. Console: banner, "help", errors for an unknown command and key, "status" fields
+   (the boot line, i.e. slot and boot type, is logged).
 3. Provisions tools/test-broker/gateway.conf with net.hosts pointing at this machine
    (--broker-ip, default: the address of the default route) and registers the gateway
    with the broker. With --no-provision the stored config is kept and the board is
@@ -285,13 +286,14 @@ def main():
         run_error(c, "set no.such.key 1")
         run_error(c, "ca 2")
         s = status(c)
-        for key in ("firmware", "gateway id", "config", "mac", "ip", "time", "uptime", "mqtt"):
+        for key in ("firmware", "boot", "gateway id", "config", "mac", "ip", "time", "uptime", "mqtt"):
             if key not in s:
                 fail(f"status has no {key} line")
         if not re.fullmatch(r"[0-9a-f]{16}", s["gateway id"]):
             fail(f"gateway id {s['gateway id']!r}")
         state["id"] = s["gateway id"]
         log(f"firmware {s['firmware']}, gateway {s['gateway id']}, config {s['config']}")
+        log(f"boot {s['boot']}")
 
     def provisioning():
         close(state["c"])

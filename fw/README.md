@@ -16,6 +16,9 @@ start time instead of sent, and the RP2350 timer stands in for the SX1302 counte
 
 - Rust with the target: `rustup target add thumbv8m.main-none-eabihf`
 - Python 3 (UF2 conversion), Mosquitto + OpenSSL for the test broker
+- [picotool](https://github.com/raspberrypi/picotool) 2.x (sealing, partition table):
+  prebuilt binaries in the `pico-sdk-tools` releases; the runner finds it on the
+  PATH, in `~/.local/bin` or via `$PICOTOOL`
 
 ## Test broker
 
@@ -35,14 +38,41 @@ cd fw
 cargo run --release
 ```
 
-`cargo run` builds, writes `target/thumbv8m.main-none-eabihf/release/picocell-gw.uf2`
-and copies it to the board if it is mounted in BOOTSEL mode (hold BOOTSEL while
-plugging in USB). Otherwise copy the `.uf2` to the `RP2350` drive by hand.
+`cargo run` builds, seals the image (`picotool seal --hash`, version from `Cargo.toml`),
+writes `target/thumbv8m.main-none-eabihf/release/picocell-gw.uf2` and copies it to the
+board if it is mounted in BOOTSEL mode (hold BOOTSEL while plugging in USB). Otherwise copy the `.uf2` to the `RP2350` drive by hand.
+
+### Partition table
+
+The firmware runs with or without the A/B partition table
+([partition-table.json](partition-table.json), sketch.md section 3.1: 8 KB table,
+slots A and B of 988 KB each, 64 KB config at `0x1F0000`, readable only by secure
+code). It reads and writes the config through the boot ROM's `flash_op`, which works
+in both cases. To install the table, with the board in BOOTSEL (`bootsel` on the
+console):
+
+```sh
+picotool partition create partition-table.json target/pt.uf2
+picotool load target/pt.uf2
+picotool reboot -u
+picotool partition info
+```
+
+Copying `pt.uf2` to the `RP2350` drive does not work: the ROM ignores it. picotool
+needs USB access to the board in BOOTSEL, e.g. a udev rule for vendor `2e8a`. Then
+flash the firmware again (the table overwrites the start of an image flashed without
+it); the config partition keeps its contents.
+
+With the table, a UF2 copy goes to the slot that is not running, so copies alternate
+between A and B; `status` shows the slot and boot type (`boot` line). The image is
+flagged TBYB (try before you buy): after a UF2 copy the ROM boots it as a trial and
+falls back to the other slot unless the firmware buys it, which for now it does right
+at boot (`explicit_buy` in the log).
 
 ## Configuration and provisioning
 
-The config lives in the last 64 KB of flash (behind the image, so flashing keeps it),
-encrypted with AES-128-GCM. For now the key is derived from the chip ID, which only
+The config lives in the last 64 KB of flash (behind both image slots, so flashing
+keeps it), encrypted with AES-128-GCM. For now the key is derived from the chip ID, which only
 keeps the secrets out of a plain flash dump; step 8 moves to a random key in OTP, and
 boards then need provisioning again. Without a complete config the gateway stays
 offline in provisioning mode and says so on the console.
