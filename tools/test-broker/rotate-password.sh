@@ -42,7 +42,8 @@ mqtt() {
 ANSWERS=$(mktemp)
 SUB=
 cleanup() {
-    [ -z "$SUB" ] || kill "$SUB" 2>/dev/null || true
+    # $SUB is the subshell running the mqtt function; mosquitto_sub is its child.
+    [ -z "$SUB" ] || { pkill -P "$SUB" 2>/dev/null; kill "$SUB" 2>/dev/null; } || true
     rm -f "$ANSWERS" "$DIR/passwd.old"
 }
 trap cleanup EXIT
