@@ -186,6 +186,27 @@ The frames go out back to back: each starts 3.5 ms after the previous one ends
 sent. The airtime counts against
 its sub-band for an hour (`duty_cycle_stats` in `event/stats`); a reboot clears it.
 
+## Hardware-in-the-loop test
+
+[../tools/hil-test.py](../tools/hil-test.py) tests a board on USB and Ethernet against
+the running test broker, over the USB console only: console commands, provisioning
+with `gateway.conf` (`net.hosts` pointing at this machine), MQTT connection,
+`ConnState`, `GatewayStats`, `UplinkFrame`, and the downlink and Class C cases above
+with their expected statuses. It prints PASS/FAIL per check and exits with the number
+of failures:
+
+```sh
+tools/hil-test.py                  # provisions, then tests (about 2 minutes)
+tools/hil-test.py --flash          # builds and flashes first (via "bootsel")
+tools/hil-test.py --no-provision   # keeps the stored config, reboots instead
+tools/hil-test.py --erase          # deletes the config at the end
+```
+
+Close other terminals on the console first: two programs reading the port each get
+part of the output (the test refuses to start then). `--broker-ip` overrides the
+address of this machine, by default the one on the default route. Without a debug
+probe a hung firmware needs BOOTSEL by hand.
+
 ## Host tests
 
 [wire](wire) holds the DNS and SNTP packet code without I/O:
