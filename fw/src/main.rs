@@ -18,6 +18,7 @@ mod downlink;
 mod flash;
 mod ids;
 mod mqtt;
+mod ota;
 mod resolve;
 mod sntp;
 mod tls;
@@ -32,6 +33,7 @@ use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, SPI0, TRNG, USB};
 use embassy_rp::spi::{Async, Config as SpiConfig, Spi};
 use embassy_rp::trng::Trng;
 use embassy_rp::usb::Driver;
+use embassy_rp::watchdog::Watchdog;
 use embassy_rp::{bind_interrupts, dma, trng, usb};
 use embassy_time::{Delay, Timer};
 use embedded_hal_bus::spi::ExclusiveDevice;
@@ -130,7 +132,8 @@ async fn main(spawner: Spawner) {
         ids.gateway_id, m[0], m[1], m[2], m[3], m[4], m[5]
     );
 
-    boot::buy();
+    boot::start();
+    spawner.spawn(boot::watchdog_task(Watchdog::new(p.WATCHDOG)).unwrap());
     config::init().await;
     let usb = Driver::new(p.USB, Irqs);
     if !config::provisioned() {

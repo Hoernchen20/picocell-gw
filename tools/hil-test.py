@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Hardware-in-the-loop test of a picocell-gw dev board over its USB console only.
 
-    tools/hil-test.py [-d DEVICE] [--flash] [--no-provision] [--broker-ip IP] [--erase]
+    tools/hil-test.py [-d DEVICE] [--flash] [--no-provision] [--broker-ip IP] [--ota]
+                      [--ota-fallback] [--erase]
 
 Needs the board on USB and Ethernet, and the test broker running on this machine
 (tools/test-broker/setup.sh, then mosquitto -c tools/test-broker/out/mosquitto.conf).
@@ -18,7 +19,13 @@ Needs the board on USB and Ethernet, and the test broker running on this machine
    UplinkFrame on the broker.
 5. Downlinks via tools/test-downlink.sh and tools/test-classc.sh against the statuses
    from fw/README.md, and "TX (no radio)" in the console log.
-6. --erase: deletes the config at the end (provisioning mode).
+6. --ota (needs the partition table): tools/ota-push.py with a wrong SHA-256 and
+   truncated (both refused, same slot), then the real update into the other slot:
+   flash update boot, bought after the broker connection, kept after a reboot.
+7. --ota-fallback (about 7 minutes): updates whose trial cannot reach the broker (the
+   gateway's password on the test broker is changed meanwhile and restored after):
+   a reboot during the trial, and the 5-minute buy deadline. Both boot the old slot.
+8. --erase: deletes the config at the end (provisioning mode).
 
 Exits with the number of failed checks. Without a debug probe the board has to run a
 firmware with a working console: if it hangs, hold BOOTSEL while plugging in USB and
@@ -45,6 +52,7 @@ import provision  # noqa: E402
 
 ELF = os.path.join(ROOT, "fw/target/thumbv8m.main-none-eabihf/release/picocell-gw")
 BROKER = os.path.join(TOOLS, "test-broker")
+PASSWD = os.path.join(BROKER, "out/passwd")
 CA = os.path.join(BROKER, "out/ca.pem")
 
 
@@ -219,6 +227,8 @@ def main():
     p.add_argument("--flash", action="store_true", help="build and flash the firmware first")
     p.add_argument("--no-provision", action="store_true", help="keep the stored config")
     p.add_argument("--broker-ip", help="address of this machine as seen by the board")
+    p.add_argument("--ota", action="store_true", help="firmware update over MQTT")
+    p.add_argument("--ota-fallback", action="store_true", help="trial images that never reach the broker")
     p.add_argument("--erase", action="store_true", help="delete the config at the end")
     a = p.parse_args()
 
@@ -382,6 +392,118 @@ def main():
             if "] error: " in l:
                 log(l)
 
+    def reopen():
+        """After the gateway restarted on its own (OTA reboot, buy deadline)."""
+        close(state["c"])
+        state["c"] = None
+        wait_gone(state["device"], timeout=10)
+        state["c"] = open_console(state["device"])
+        run(state["c"], "log off")
+
+    def slot():
+        m = re.match(r"slot ([AB]),", status(state["c"])["boot"])
+        if not m:
+            fail(f"not booted from slot A or B: {status(state['c'])['boot']} (partition table?)")
+        return m[1]
+
+    def push(*args, want_rc=0, want=None):
+        r = subprocess.run([sys.executable, os.path.join(TOOLS, "ota-push.py"), state["id"], *args],
+                           capture_output=True, text=True, timeout=180)
+        out = (r.stdout + r.stderr).strip()
+        last = out.splitlines()[-1] if out else ""
+        log(last)
+        if r.returncode != want_rc or (want and want not in out):
+            fail(f"ota-push.py {' '.join(args)}: exit {r.returncode}, {want!r} expected: {last}")
+
+    def blocked(on):
+        """Changes the gateway's password on the test broker, or restores it."""
+        saved = PASSWD + ".hil"
+        if on:
+            shutil.copy2(PASSWD, saved)
+            subprocess.run(["mosquitto_passwd", "-b", PASSWD, state["id"], "hil-test-blocked"], check=True)
+        elif os.path.exists(saved):
+            os.replace(saved, PASSWD)
+        else:
+            return
+        subprocess.run(["pkill", "-HUP", "-x", "mosquitto"], check=True)
+        log("broker: gateway " + ("locked out" if on else "back in"))
+
+    def uptime():
+        d, hms = status(state["c"])["uptime"].split("d ")
+        h, m, sec = map(int, hms.split(":"))
+        return ((int(d) * 24 + h) * 60 + m) * 60 + sec
+
+    def ota_refused(*args, want):
+        def fn():
+            before, up = slot(), uptime()
+            push(*args, want_rc=int("--bad-sha256" in args), want=want)
+            if slot() != before or uptime() < up:
+                fail("gateway changed slot or restarted")
+        return fn
+
+    def ota_update():
+        before = slot()
+        push(want="verified")
+        reopen()
+        s = status(state["c"])
+        log(f"boot {s['boot']}")
+        if slot() == before or "flash update boot" not in s["boot"]:
+            fail(f"slot {before} → {slot()}, flash update boot expected")
+        if "trial" not in s:
+            fail("no trial line (bought before the broker connection?)")
+        connected()
+        s = status(state["c"])
+        if "trial" in s:
+            fail(f"still on trial after the broker connection: {s['trial']}")
+        if not any("explicit_buy: ok" in l for l in run(state["c"], "log show 100")):
+            fail('"explicit_buy: ok" not in the log')
+        state["slot"] = slot()
+
+    def ota_kept():
+        reboot()
+        s = status(state["c"])
+        if slot() != state["slot"] or "normal boot" not in s["boot"]:
+            fail(f"after reboot: {s['boot']}, slot {state['slot']} expected")
+        connected()
+
+    def ota_fallback(deadline):
+        def fn():
+            before = slot()
+            try:
+                push(want="verified")
+                blocked(True)
+                reopen()
+                s = status(state["c"])
+                if slot() == before or "trial" not in s:
+                    fail(f"no trial in the new slot: {s['boot']}")
+                if deadline:
+                    # The trial reboots itself after 300 s of uptime; USB comes back
+                    # within a second or two, so watch the uptime, not the device.
+                    end = time.monotonic() + 360
+                    last = uptime()
+                    while True:
+                        time.sleep(5)
+                        try:
+                            now = uptime()
+                        except (Failed, OSError):
+                            reopen()
+                            break
+                        if now < last:
+                            break
+                        if time.monotonic() > end:
+                            fail("no reboot within 360 s")
+                        last = now
+                else:
+                    reboot()
+                s = status(state["c"])
+                log(f"boot {s['boot']}")
+                if slot() != before or "normal boot" not in s["boot"]:
+                    fail(f"back in slot {before} with a normal boot expected")
+            finally:
+                blocked(False)
+            connected()
+        return fn
+
     def erase():
         state["c"] = restart(state["c"], state["device"], "erase")
         if not status(state["c"])["config"].startswith("provisioning mode"):
@@ -407,12 +529,21 @@ def main():
     check("class C, duty cycle 0.1 %", class_c([], ["OK", "OK"] + ["DUTY_CYCLE_OVERFLOW"] * 3))
     check("class C, RX2 band 10 %", class_c([3, 869525000, 12, 27], ["OK"] * 3))
     check("console log", tx_logged)
+    if a.ota or a.ota_fallback:
+        check("OTA, wrong SHA-256", ota_refused("--bad-sha256", want="SHA-256 mismatch"))
+        check("OTA, truncated", ota_refused("--truncate", "100000", want="stopped after"))
+    if a.ota:
+        check("OTA update", ota_update)
+        check("OTA, bought image kept", ota_kept)
+    if a.ota_fallback:
+        check("OTA trial, reboot before the buy", ota_fallback(False))
+        check("OTA trial, buy deadline", ota_fallback(True))
     if a.erase:
         check("erase", erase)
     if state["c"] is not None:
         try:
             run(state["c"], "log info")
-        except Failed:
+        except (Failed, OSError):
             pass
     summary(results)
     sys.exit(sum(not ok for _, ok, _ in results))

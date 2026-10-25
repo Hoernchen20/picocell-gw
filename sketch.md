@@ -816,6 +816,35 @@ Milestones:
   - Host tool `tools/ota-push.py`.
   - Tests: good update, truncated image, wrong SHA-256, image that never connects
     (roll back), reboot during the transfer.
+  - Status (2026-10-25): implemented, tested on one board: `tools/hil-test.py --ota
+    --ota-fallback` (wrong SHA-256 and truncated image refused without a restart;
+    update into the other slot, bought after the broker connection, kept after a
+    reboot; a trial locked out of the broker falls back on a reboot and after the
+    300 s deadline), plus a reboot during the transfer by hand (old image runs on,
+    the sender gets `error: no transfer`). `fw/src/ota.rs`:
+    begin `0x01` + size + SHA-256, chunks `0x02` + offset + 4 KB (sector-aligned, in
+    order; any other offset is answered with `next <offset>`, so the sender only
+    resends on a timeout). The slot's first sector is erased at the begin and written
+    last, after the SHA-256 matched (first sector from RAM, the rest read back), so a
+    partial image never has a valid block loop. Reboot via ROM `reboot` FLASH_UPDATE
+    with the slot's XIP address. Rollback version left out of the header: the ROM
+    checks the one in the image (8c); an unsigned copy in the header adds nothing.
+    `fw/src/boot.rs`: an OTA reboot leaves a mark in watchdog SCRATCH0 (the ROM uses
+    2–7); with it a trial is bought after connect + subscribe, so the new image can
+    take the next update. Without it (UF2 copy, someone at the USB port) the trial
+    is bought at boot, as in 8a, so provisioning mode and broker-less dev work keep
+    their image. Watchdog 8 s, fed every second by `boot::watchdog_task`, which also
+    replaces the ROM's 16.7 s; buy deadline 300 s, then reset. An update is refused
+    while the image is still on trial (the other slot is its fallback).
+    `tools/ota-push.py` (standard library MQTT 3.1.1 client, QoS 1, 4 KB chunks).
+  - Findings: `explicit_buy` erases the first sector of the other slot (tbyb/update
+    0x04 afterwards), so there is no going back to the previous image once bought;
+    a normal boot never picks an unbought TBYB image (datasheet 5.1.17), so any
+    reboot before the buy falls back. DHCP took 12 s and the broker connection came
+    after 13.5 s: within the ROM's 16.7 s, but too close to rely on it. 330 KB take
+    about 8 s. A reset in the 200 ms between `verified` and the OTA reboot is a
+    normal boot, which skips the unbought new image: the update is lost, the old
+    image runs on (safe; `ota-push.py` exits 0 then, the slot in `status` tells).
 - **8c. Signing**
   - secp256k1 test signing key, committed as dev material; the production key is
     separate and kept offline.
@@ -905,7 +934,9 @@ Milestones:
   (`erase` without login?).
 - LED blink patterns for the states listed in 2.4.
 - Stats interval and contents; whether to support `command/config`.
-- Watchdog timeout and which tasks feed it; whether to use the second core.
+- Watchdog: settled in 8b (8 s, fed every second by its own task, so it catches a
+  stalled executor but not a single stuck task). Still open: whether to use the
+  second core.
 - Gateway ID: `fw/` uses the RP2350 chip ID as placeholder EUI-64 until the SX1302
   EUI can be read; switch over then (re-register the boards in ChirpStack).
 - SNTP and resolver: implemented in `fw/` and tested on hardware (DNS via DHCP and

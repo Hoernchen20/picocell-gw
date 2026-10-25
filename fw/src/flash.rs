@@ -16,7 +16,7 @@ use embedded_storage_async::nor_flash::{
     ErrorType, MultiwriteNorFlash, NorFlash, NorFlashError, NorFlashErrorKind, ReadNorFlash,
 };
 
-const XIP_BASE: u32 = 0x1000_0000;
+pub const XIP_BASE: u32 = 0x1000_0000;
 const PAGE: usize = 256;
 pub const SECTOR: u32 = 4096;
 

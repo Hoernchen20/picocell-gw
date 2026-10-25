@@ -11,6 +11,10 @@
 //! replaces the stored one and the gateway restarts; refused, the next attempt uses
 //! the stored one, and when that is accepted the new one is dropped. Outcomes go to
 //! `state/credentials` as text.
+//!
+//! Firmware update (sketch.md section 8.1, 8b): messages on `command/ota` go to
+//! `ota::Receiver`, answers to `state/ota`. An OTA trial image is bought once the
+//! subscriptions are up, so it can take the next update.
 
 use core::fmt::Write;
 use core::num::NonZero;
@@ -37,7 +41,7 @@ use rust_mqtt::types::{MqttBinary, MqttString, ReasonCode, TopicFilter, TopicNam
 use wire::time::Utc;
 
 use crate::tls::{FailClosed, Suite};
-use crate::{clock, config, downlink, resolve};
+use crate::{boot, clock, config, downlink, ota, resolve};
 
 const KEEP_ALIVE_S: u16 = 30;
 const MAX_PACKET: u32 = 8192;
@@ -132,6 +136,8 @@ pub async fn mqtt_task(
     // While a new password is staged, attempts alternate between it and the stored one
     // until the broker accepts either; the new one first.
     let mut use_new = config::staged_password().is_some();
+    // Survives reconnects: the sender resends the chunk the gateway did not answer.
+    let mut ota = ota::Receiver::new();
     loop {
         set_state(State::WaitNetwork);
         stack.wait_config_up().await;
@@ -145,7 +151,7 @@ pub async fn mqtt_task(
         }
         set_state(State::Connecting);
         let new = if use_new { config::staged_password() } else { None };
-        match session(stack, port, ca_slot, new.as_deref(), gateway_id, bufs).await {
+        match session(stack, port, ca_slot, new.as_deref(), gateway_id, bufs, &mut ota).await {
             // Was connected: retry soon, with a password staged meanwhile.
             Ok(()) => {
                 backoff = 1;
@@ -189,6 +195,8 @@ enum Incoming {
     Nothing,
     Ack(usize),
     Password(Result<config::Password, &'static str>),
+    /// The answer for `state/ota`, and whether to reboot into the new image after it.
+    Ota(ota::Reply, bool),
 }
 
 /// One connection, with the staged password `new` or else the stored one. `Ok` once
@@ -200,6 +208,7 @@ async fn session(
     new: Option<&str>,
     gateway_id: &str,
     bufs: &mut Buffers,
+    ota: &mut ota::Receiver,
 ) -> Result<(), &'static str> {
     let cfg = config::get();
     let host = cfg.mqtt_host();
@@ -218,6 +227,8 @@ async fn session(
     let down_topic = topic(gateway_id, "command/down");
     let password_topic = topic(gateway_id, "command/credentials");
     let report_topic = topic(gateway_id, "state/credentials");
+    let ota_topic = topic(gateway_id, "command/ota");
+    let ota_report_topic = topic(gateway_id, "state/ota");
 
     let mut socket = TcpSocket::new(stack, &mut bufs.tcp_rx, &mut bufs.tcp_tx);
     // Also bounds poll_body(): never wrap MQTT reads in a timeout (not cancel-safe).
@@ -232,7 +243,7 @@ async fn session(
         .map_err(|_| TLS_FAILED)?;
 
     let mut bump = BumpBuffer::new(&mut bufs.mqtt);
-    let mut client: Client<'_, '_, _, _, 2, 4, 4, 0, 0, 0, 0> = Client::new(&mut bump);
+    let mut client: Client<'_, '_, _, _, 3, 4, 4, 0, 0, 0, 0> = Client::new(&mut bump);
     let mut offline = [0u8; 64];
     let n = chirpstack::conn_state(gateway_id, false, &mut offline).map_err(|_| "gateway id too long")?;
     let will = WillOptions::new(name(&state_topic), MqttBinary::try_from(&offline[..n]).unwrap())
@@ -321,13 +332,22 @@ async fn session(
                 &SubscriptionOptions::new().at_least_once().retain_as_published(),
             )
             .await
+            .is_ok()
+        && client
+            .subscribe(
+                TopicFilter::new(MqttString::from_str(ota_topic.as_str()).unwrap()).unwrap(),
+                &SubscriptionOptions::new().at_least_once().retain_as_published(),
+            )
+            .await
             .is_ok();
     if !ok {
         return Err("publish/subscribe failed");
     }
+    boot::confirm();
 
     let stats_options = PublicationOptions::new(TopicReference::Name(name(&stats_topic)));
     let ack_options = PublicationOptions::new(TopicReference::Name(name(&ack_topic)));
+    let ota_options = PublicationOptions::new(TopicReference::Name(name(&ota_report_topic)));
     let mut buf = [0u8; 512];
     // Right away, so ChirpStack shows the gateway online without waiting an interval.
     let n = stats(gateway_id, &mut buf);
@@ -345,6 +365,11 @@ async fn session(
                     Ok(Event::Publish(p)) => match p.topic.name().map(|t| t.as_ref().as_str()) {
                         Some(t) if t == password_topic.as_str() => {
                             Incoming::Password(new_password(p.retain, p.message.as_ref()))
+                        }
+                        // Flash writes straight from the receive buffer.
+                        Some(t) if t == ota_topic.as_str() => {
+                            let (reply, reboot) = ota.handle(p.retain, p.message.as_ref()).await;
+                            Incoming::Ota(reply, reboot)
                         }
                         _ => match downlink::handle(gateway_id, p.message.as_ref(), &mut buf) {
                             Some(n) => Incoming::Ack(n),
@@ -379,6 +404,14 @@ async fn session(
                             }
                         }
                         client.publish(&report_options, msg.as_bytes().into()).await.map(|_| ())
+                    }
+                    Incoming::Ota(reply, reboot) => {
+                        let r = client.publish(&ota_options, reply.as_bytes().into()).await.map(|_| ());
+                        if reboot {
+                            Timer::after_millis(200).await;
+                            ota.reboot();
+                        }
+                        r
                     }
                 };
                 if let Err(e) = result {

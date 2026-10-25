@@ -66,8 +66,36 @@ it); the config partition keeps its contents.
 With the table, a UF2 copy goes to the slot that is not running, so copies alternate
 between A and B; `status` shows the slot and boot type (`boot` line). The image is
 flagged TBYB (try before you buy): after a UF2 copy the ROM boots it as a trial and
-falls back to the other slot unless the firmware buys it, which for now it does right
-at boot (`explicit_buy` in the log).
+falls back to the other slot unless the firmware buys it. After a UF2 copy it does so
+right at boot (`explicit_buy` in the log); after an OTA update only once it reaches
+the broker (below). A bought image is the only one left: the ROM erases the first
+sector of the other slot.
+
+The firmware runs the watchdog (8 s, fed every second while the executor runs); it
+also takes over the ROM's 16.7 s trial watchdog, which DHCP alone can nearly use up.
+
+### Firmware update over MQTT
+
+With the table installed and the gateway connected, from the repository root:
+
+```sh
+cargo build --release --manifest-path fw/Cargo.toml
+tools/ota-push.py <gateway-id>
+```
+
+`ota-push.py` seals the ELF as the runner does and sends the image to
+`command/ota` in 4 KB chunks (QoS 1, admin user of the test broker; `--host`,
+`--user` etc. for another broker). The gateway writes the slot that is not running,
+checks the SHA-256, answers on `state/ota` and reboots into the new image (about 8 s
+for 330 KB). The new image runs as a trial (`trial` line in `status`): it is bought
+once it has connected to the broker and subscribed; otherwise it reboots after 5
+minutes and the old image boots again, as on any reboot before the buy. An update
+is refused while the running image is still on trial (the other slot is its
+fallback). A transfer survives MQTT reconnects (unanswered chunks are resent) but
+not a reboot of the gateway; then run `ota-push.py` again.
+
+Fault options for tests: `--bad-sha256` (refused after the last chunk), `--truncate
+BYTES` (the gateway keeps running the old image).
 
 ## Configuration and provisioning
 
@@ -230,7 +258,13 @@ tools/hil-test.py                  # provisions, then tests (about 2 minutes)
 tools/hil-test.py --flash          # builds and flashes first (via "bootsel")
 tools/hil-test.py --no-provision   # keeps the stored config, reboots instead
 tools/hil-test.py --erase          # deletes the config at the end
+tools/hil-test.py --ota            # OTA: refused images, update, kept after reboot
+tools/hil-test.py --ota-fallback   # trials that never reach the broker (about 7 minutes)
 ```
+
+The OTA checks need the partition table. `--ota-fallback` changes the gateway's
+password on the test broker during the trial and restores it afterwards (also on
+failure).
 
 Close other terminals on the console first: two programs reading the port each get
 part of the output (the test refuses to start then). `--broker-ip` overrides the
