@@ -58,7 +58,7 @@ offline in provisioning mode and says so on the console.
 | `mqtt.host` | | broker host name (SNI and certificate check); required |
 | `mqtt.port` | `8883` | |
 | `mqtt.topic_prefix` | `eu868` | |
-| `mqtt.password` | | required; the username is the gateway ID |
+| `mqtt.password` | | required; 1 to 64 printable ASCII characters, no blanks; the username is the gateway ID |
 | `tls.ca0`, `tls.ca1` | | broker CA (PEM via `ca 0` / `ca 1`); `tls.ca0` required |
 
 With `tls.ca1` set, a failed TLS handshake makes the next attempt use the other slot
@@ -71,7 +71,28 @@ tools/provision.py tools/test-broker/gateway.conf net.hosts=mqtt.test=<IP of the
 
 [gateway.conf](../tools/test-broker/gateway.conf) uses DHCP and reads the password and
 CA from `tools/test-broker/out/`. On the console the same works by hand: `show`, `set
-<key> <value>`, `ca 0` and paste the PEM file, `commit`.
+<key> <value>`, `ca 0` and paste the PEM file, `commit`. A value starting with `@` in
+a config file names a file; write `@@` for a literal `@`.
+
+### Remote password change
+
+The new password, raw and not retained, on `<prefix>/gateway/<id>/command/credentials`
+(only admin/ChirpStack may publish there) is stored next to the current one; the
+gateway answers `stored` or `rejected: <reason>` on `state/credentials`. The next
+connection uses the new password: accepted, it replaces the stored one (`committed`,
+then a restart); refused, the gateway falls back to the stored one and drops the new
+one when that is accepted (`rejected: broker refused it, ...`). A restart in between
+keeps the staged password; `status` shows it. Change the broker only after `stored`:
+Mosquitto disconnects the gateway when its password changes on reload, which starts
+the next connection. For the test broker:
+
+```sh
+tools/test-broker/rotate-password.sh <gateway-id> <file with the new password>
+```
+
+It sends the password from the file (no shell quoting involved), waits for `stored`,
+switches the broker's password file and waits for `committed`; otherwise it restores
+the old broker password. ChirpStack may log the unknown `state/credentials` messages.
 
 ## Time
 

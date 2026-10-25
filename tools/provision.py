@@ -5,7 +5,8 @@
 
 CONFIG has one "key = value" per line; lines starting with "#" are comments. A value
 "@path" is read from that file, relative to CONFIG: tls.ca0 and tls.ca1 take a PEM
-certificate this way, secrets can stay in their own file. key=value arguments
+certificate this way, secrets can stay in their own file. A value starting with "@@"
+is taken literally, minus one "@" (a password starting with "@"). key=value arguments
 override CONFIG (their @paths are relative to the current directory).
 
 The edited config starts empty ("clear"), so keys not given keep their defaults.
@@ -56,7 +57,9 @@ def load(path, overrides):
         bases[key.strip()] = "."
     for key, base in bases.items():
         value = items[key]
-        if value.startswith("@"):
+        if value.startswith("@@"):
+            items[key] = value[1:]
+        elif value.startswith("@"):
             name = os.path.join(base, value[1:])
             try:
                 with open(name) as f:

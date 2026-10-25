@@ -5,6 +5,7 @@
 #
 #   setup.sh [broker-hostname]      default: mqtt.test (= mqtt.host in gateway.conf)
 #   add-gateway.sh <gateway-id>     add a board (ID from its USB console)
+#   rotate-password.sh <id> <file>  change its password remotely
 #   mosquitto -c out/mosquitto.conf
 set -eu
 
@@ -43,7 +44,8 @@ chmod 600 passwd
 mosquitto_passwd -b passwd admin admin-pw
 # Gateway ID used by tools/mqtt-host-test.
 mosquitto_passwd -b passwd 0016c001ff10a235 secret-pw
-echo "$PASSWORD" > gateway-password
+# printf: dash's echo would interpret backslashes in the password.
+printf '%s\n' "$PASSWORD" > gateway-password
 
 cat > acl <<EOF
 user admin

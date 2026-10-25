@@ -133,12 +133,19 @@ fn check(kind: Kind, v: &str) -> Result<(), &'static str> {
             (1..=32).contains(&v.len()) && v.bytes().all(|b| b.is_ascii_graphic() && b != b'+' && b != b'#'),
             "1 to 32 characters expected, no '+', '#' or blanks",
         ),
+        // No blanks: trimming (console, config files) or a stray newline (remote
+        // change) cannot then change a password unnoticed.
         Kind::Secret => (
-            (1..=64).contains(&v.len()) && v.bytes().all(|b| b == b' ' || b.is_ascii_graphic()),
-            "1 to 64 printable characters expected",
+            (1..=64).contains(&v.len()) && v.bytes().all(|b| b.is_ascii_graphic()),
+            "1 to 64 printable characters expected, no blanks",
         ),
     };
     if ok { Ok(()) } else { Err(expected) }
+}
+
+/// Checks a new `mqtt.password` as it is, without the trimming of `Settings::set`.
+pub fn check_password(v: &str) -> Result<(), &'static str> {
+    check(Kind::Secret, v)
 }
 
 /// An X.509 certificate is one DER SEQUENCE: checks its header against the length.
@@ -421,7 +428,7 @@ mod tests {
         let mut s = Settings::new();
         s.set("net.ipv4", " 10.0.0.20/24 ").unwrap();
         s.set("mqtt.host", "mqtt.example.org").unwrap();
-        s.set("mqtt.password", "pass word").unwrap();
+        s.set("mqtt.password", r#"p@ss"%{}=\w'rd"#).unwrap();
         s.set_ca(0, DER).unwrap();
         s
     }
@@ -454,6 +461,12 @@ mod tests {
         assert!(s.set("mqtt.port", "0").is_err());
         assert!(s.set("mqtt.topic_prefix", "eu/#").is_err());
         assert!(s.set("mqtt.password", "").is_err());
+        assert!(s.set("mqtt.password", "pass word").is_err());
+        assert!(s.set("mqtt.password", "pässword").is_err());
+        assert!(check_password(r#"p@ss"%{}=\w'rd"#).is_ok());
+        assert!(check_password("password\n").is_err());
+        assert!(check_password(" password").is_err());
+        assert!(check_password(&"x".repeat_into::<65>()).is_err());
         assert!(s.set("mqtt.host", "a_b").is_err());
         assert_eq!(s.text.as_str(), "");
         let long = "x".repeat_into::<64>();
@@ -482,7 +495,7 @@ mod tests {
         assert_eq!((address, prefix, gateway), (Ipv4Addr::new(10, 0, 0, 20), 24, Some(Ipv4Addr::new(10, 0, 0, 1))));
         assert_eq!(&s.hosts()[..], [("mqtt.example.org", Ipv4Addr::new(10, 0, 0, 5)), ("ntp", Ipv4Addr::new(10, 0, 0, 1))]);
         assert_eq!(&s.dns_servers()[..], [Ipv4Addr::new(10, 0, 0, 1)]);
-        assert_eq!(s.mqtt_password(), "pass word");
+        assert_eq!(s.mqtt_password(), r#"p@ss"%{}=\w'rd"#);
         s.set("net.mode", "dhcp").unwrap();
         assert!(matches!(s.net(), Some(Net::Dhcp)));
     }

@@ -3,6 +3,14 @@
 //! One task owns the connection and selects between incoming packets (downlinks, each
 //! answered with a `DownlinkTxAck`), queued uplinks, stats and keepalive pings. Only `poll_header()` is cancel-safe, so it is the one that
 //! sits in the select; `poll_body()` always runs to completion.
+//!
+//! Remote password change (sketch.md section 5.2): the raw new password published to
+//! `command/credentials` (not retained) is stored next to the current one and used
+//! from the next connection on, typically once the broker has switched to it and
+//! disconnected the gateway (Mosquitto does on reload). Accepted by the broker, it
+//! replaces the stored one and the gateway restarts; refused, the next attempt uses
+//! the stored one, and when that is accepted the new one is dropped. Outcomes go to
+//! `state/credentials` as text.
 
 use core::fmt::Write;
 use core::num::NonZero;
@@ -18,13 +26,13 @@ use embedded_tls::{TlsConfig, TlsConnection, TlsContext};
 use log::{info, warn};
 use jit::duty::{self, EU868};
 use rust_mqtt::buffer::BumpBuffer;
-use rust_mqtt::client::Client;
+use rust_mqtt::client::{Client, MqttError};
 use rust_mqtt::client::event::Event;
 use rust_mqtt::client::options::{
     ConnectOptions, PublicationOptions, SubscriptionOptions, TopicReference, WillOptions,
 };
 use rust_mqtt::config::KeepAlive;
-use rust_mqtt::types::{MqttBinary, MqttString, TopicFilter, TopicName};
+use rust_mqtt::types::{MqttBinary, MqttString, ReasonCode, TopicFilter, TopicName};
 
 use wire::time::Utc;
 
@@ -121,6 +129,9 @@ pub async fn mqtt_task(
     // CA slot to verify the broker with; after a failed handshake the other one, if set
     // (CA rotation, sketch.md section 5.3).
     let mut ca_slot = 0;
+    // While a new password is staged, attempts alternate between it and the stored one
+    // until the broker accepts either; the new one first.
+    let mut use_new = config::staged_password().is_some();
     loop {
         set_state(State::WaitNetwork);
         stack.wait_config_up().await;
@@ -133,14 +144,22 @@ pub async fn mqtt_task(
             }
         }
         set_state(State::Connecting);
-        match session(stack, port, ca_slot, gateway_id, bufs).await {
-            // Was connected: retry soon.
-            Ok(()) => backoff = 1,
+        let new = if use_new { config::staged_password() } else { None };
+        match session(stack, port, ca_slot, new.as_deref(), gateway_id, bufs).await {
+            // Was connected: retry soon, with a password staged meanwhile.
+            Ok(()) => {
+                backoff = 1;
+                use_new = config::staged_password().is_some();
+            }
             Err(e) => {
                 warn!("mqtt: {e}");
                 if e == TLS_FAILED && !config::get().ca(1 - ca_slot).is_empty() {
                     ca_slot = 1 - ca_slot;
                     info!("mqtt: trying tls.ca{ca_slot}");
+                }
+                if e == REFUSED && config::staged_password().is_some() {
+                    use_new = !use_new;
+                    info!("mqtt: trying the {} password", if use_new { "new" } else { "stored" });
                 }
             }
         }
@@ -152,12 +171,33 @@ pub async fn mqtt_task(
 }
 
 const TLS_FAILED: &str = "tls handshake failed";
+const REFUSED: &str = "broker refused the password";
 
-/// One connection. `Ok` once the session was up and then ended, `Err` if it never came up.
+/// A message on `command/credentials`: the new password, as it is.
+fn new_password(retain: bool, payload: &[u8]) -> Result<config::Password, &'static str> {
+    // A retained one would stay on the broker.
+    if retain {
+        return Err("retained message refused");
+    }
+    let pw = core::str::from_utf8(payload).map_err(|_| "not text")?;
+    config::check_password(pw)?;
+    Ok(config::Password::try_from(pw).unwrap())
+}
+
+/// What an incoming publication asks for once the buffer is free again.
+enum Incoming {
+    Nothing,
+    Ack(usize),
+    Password(Result<config::Password, &'static str>),
+}
+
+/// One connection, with the staged password `new` or else the stored one. `Ok` once
+/// the session was up and then ended, `Err` if it never came up.
 async fn session(
     stack: Stack<'static>,
     port: u16,
     ca_slot: usize,
+    new: Option<&str>,
     gateway_id: &str,
     bufs: &mut Buffers,
 ) -> Result<(), &'static str> {
@@ -176,6 +216,8 @@ async fn session(
     let stats_topic = topic(gateway_id, "event/stats");
     let ack_topic = topic(gateway_id, "event/ack");
     let down_topic = topic(gateway_id, "command/down");
+    let password_topic = topic(gateway_id, "command/credentials");
+    let report_topic = topic(gateway_id, "state/credentials");
 
     let mut socket = TcpSocket::new(stack, &mut bufs.tcp_rx, &mut bufs.tcp_tx);
     // Also bounds poll_body(): never wrap MQTT reads in a timeout (not cancel-safe).
@@ -201,12 +243,18 @@ async fn session(
         .keep_alive(KeepAlive::Seconds(NonZero::new(KEEP_ALIVE_S).unwrap()))
         .maximum_packet_size(NonZero::new(MAX_PACKET).unwrap())
         .user_name(MqttString::from_str(gateway_id).unwrap())
-        .password(MqttBinary::try_from(cfg.mqtt_password().as_bytes()).unwrap())
+        .password(MqttBinary::try_from(new.unwrap_or(cfg.mqtt_password()).as_bytes()).unwrap())
         .will(will);
     client
         .connect(tls, &options, Some(MqttString::from_str(gateway_id).unwrap()))
         .await
-        .map_err(|_| "mqtt connect refused")?;
+        .map_err(|e| match e {
+            MqttError::Disconnect {
+                reason: ReasonCode::BadUserNameOrPassword | ReasonCode::NotAuthorized,
+                ..
+            } => REFUSED,
+            _ => "mqtt connect refused",
+        })?;
     // Safety: the CONNACK info borrowing the buffer was dropped.
     unsafe { client.buffer_mut().reset() };
     info!("mqtt: connected to {host}");
@@ -217,6 +265,33 @@ async fn session(
     UPLINKS.clear();
     if stale > 0 {
         info!("mqtt: dropped {stale} queued uplinks");
+    }
+
+    let report_options = PublicationOptions::new(TopicReference::Name(name(&report_topic)));
+    // Settle a staged password: the broker accepted the new one, or (after refusing
+    // it) the stored one.
+    if config::staged_password().is_some() {
+        if new.is_some() {
+            match config::commit_password().await {
+                Ok(()) => {
+                    info!("mqtt: new password accepted and stored, restarting");
+                    let _ = client.publish(&report_options, b"committed"[..].into()).await;
+                    Timer::after_millis(200).await;
+                    cortex_m::peripheral::SCB::sys_reset();
+                }
+                // Still staged: the next connection tries again.
+                Err(e) => warn!("mqtt: storing the new password: {e}"),
+            }
+        } else {
+            warn!("mqtt: broker refused the new password, keeping the stored one");
+            if let Err(e) = config::drop_password().await {
+                warn!("mqtt: dropping the new password: {e}");
+            }
+            let msg = b"rejected: broker refused it, the stored password stays";
+            if client.publish(&report_options, msg[..].into()).await.is_err() {
+                return Ok(());
+            }
+        }
     }
 
     let up = name(&up_topic);
@@ -235,6 +310,15 @@ async fn session(
             .subscribe(
                 TopicFilter::new(MqttString::from_str(down_topic.as_str()).unwrap()).unwrap(),
                 &SubscriptionOptions::new().at_least_once(),
+            )
+            .await
+            .is_ok()
+        && client
+            .subscribe(
+                TopicFilter::new(MqttString::from_str(password_topic.as_str()).unwrap()).unwrap(),
+                // Otherwise the broker clears the retain flag on live messages, and a
+                // retained password would go unnoticed.
+                &SubscriptionOptions::new().at_least_once().retain_as_published(),
             )
             .await
             .is_ok();
@@ -257,10 +341,17 @@ async fn session(
     loop {
         match select4(client.poll_header(), UPLINKS.receive(), ping.next(), stats_ticker.next()).await {
             Either4::First(Ok(header)) => {
-                // Only command/down is subscribed.
-                let ack = match client.poll_body(header).await {
-                    Ok(Event::Publish(p)) => downlink::handle(gateway_id, p.message.as_ref(), &mut buf),
-                    Ok(_) => None,
+                let incoming = match client.poll_body(header).await {
+                    Ok(Event::Publish(p)) => match p.topic.name().map(|t| t.as_ref().as_str()) {
+                        Some(t) if t == password_topic.as_str() => {
+                            Incoming::Password(new_password(p.retain, p.message.as_ref()))
+                        }
+                        _ => match downlink::handle(gateway_id, p.message.as_ref(), &mut buf) {
+                            Some(n) => Incoming::Ack(n),
+                            None => Incoming::Nothing,
+                        },
+                    },
+                    Ok(_) => Incoming::Nothing,
                     Err(e) => {
                         warn!("mqtt: {e:?}");
                         break;
@@ -268,10 +359,30 @@ async fn session(
                 };
                 // Safety: the event borrowing the buffer was dropped.
                 unsafe { client.buffer_mut().reset() };
-                if let Some(n) = ack
-                    && let Err(e) = client.publish(&ack_options, buf[..n].into()).await
-                {
-                    warn!("mqtt: ack: {e:?}");
+                let result = match incoming {
+                    Incoming::Nothing => Ok(()),
+                    Incoming::Ack(n) => client.publish(&ack_options, buf[..n].into()).await.map(|_| ()),
+                    Incoming::Password(pw) => {
+                        let staged = match pw {
+                            Ok(pw) => config::stage_password(&pw).await,
+                            Err(e) => Err(e),
+                        };
+                        let mut msg = heapless::String::<96>::new();
+                        match staged {
+                            Ok(()) => {
+                                info!("mqtt: new password staged for the next connection");
+                                let _ = msg.push_str("stored");
+                            }
+                            Err(e) => {
+                                warn!("mqtt: password change rejected: {e}");
+                                let _ = write!(msg, "rejected: {e}");
+                            }
+                        }
+                        client.publish(&report_options, msg.as_bytes().into()).await.map(|_| ())
+                    }
+                };
+                if let Err(e) = result {
+                    warn!("mqtt: publish: {e:?}");
                     break;
                 }
             }

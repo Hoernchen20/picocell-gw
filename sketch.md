@@ -525,6 +525,8 @@ Topic prefix e.g. `eu868`, gateway ID = SX1302 EUI (hex).
 | publish (retained) | `eu868/gateway/<id>/state/conn` | `ConnState` ONLINE; Last Will = OFFLINE |
 | subscribe | `eu868/gateway/<id>/command/down` | `DownlinkFrame` |
 | subscribe | `eu868/gateway/<id>/command/config` | optional, gateway configuration |
+| subscribe | `eu868/gateway/<id>/command/credentials` | new password, raw text (5.2); not ChirpStack |
+| publish | `eu868/gateway/<id>/state/credentials` | `stored` / `committed` / `rejected: ...` (5.2) |
 
 Downlink timing support:
 
@@ -629,6 +631,13 @@ Keep a DNP footprint on the PCB.
 - Remotely via a command topic (only ChirpStack/admin may publish to `command/`).
 - Two-phase: store new alongside old → reconnect with new → commit on success,
   fall back on failure.
+- Implemented: raw password on `command/credentials` (retained ones refused), same
+  rule as the console (1–64 printable ASCII, no blanks, so no trimming or stray
+  newline changes it unnoticed); staged as map item 2; answers on
+  `state/credentials`; the next connection uses it (Mosquitto disconnects the
+  gateway when the password file changes on reload, so the broker switches after
+  `stored`). Attempts alternate new/stored on "bad username or password"; the
+  accepted one wins (new: stored as `mqtt.password`, restart; stored: new dropped).
 
 ### 5.3 CA certificate rotation
 
@@ -763,6 +772,8 @@ Keep a DNP footprint on the PCB.
   size + SHA-256), `set`, `set mqtt.password` without echo, `unset`, `ca 0|1` (PEM
   pasted line by line), `clear`, `discard`, `commit` (store + restart), `erase`;
   `tools/provision.py` sends a config file.
+- Remote password change (5.2): done, `tools/test-broker/rotate-password.sh` drives
+  it on the test broker. +10 KB text, +1 KB RAM.
 - Config schema: done for the keys in use (`fw/settings`, host-tested). One
   `sequential-storage` map item (key 1) at 0x1F0000: format byte, random 96-bit
   nonce, AES-128-GCM over the settings (format byte, `key=value` text lines, two CA

@@ -588,6 +588,9 @@ async fn status(o: &mut Out<'_>, ctx: &Context, pending: &Settings) -> Result<()
     if pending != cfg {
         o.write(b", uncommitted changes").await?;
     }
+    if config::staged_password().is_some() {
+        o.write(b", new mqtt.password staged").await?;
+    }
     o.write(b"\r\n").await?;
     out!(o, "mac        {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\r\n", m[0], m[1], m[2], m[3], m[4], m[5])?;
     match ctx.stack.and_then(|s| s.config_v4()) {
