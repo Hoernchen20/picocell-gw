@@ -515,7 +515,7 @@ mod tests {
         let mut buf = [0u8; 64];
         assert_eq!(conn_state(&"x".repeat(33), true, &mut buf), Err(Overflow));
         let c = Counters::default();
-        let meta = [("a", "1"), ("b", "2"), ("c", "3"), ("d", "4"), ("e", "5")];
+        let meta: [_; 9] = core::array::from_fn(|i| (["a", "b", "c", "d", "e", "f", "g", "h", "i"][i], "1"));
         assert_eq!(gateway_stats(ID, 0, &c, None, &meta, &mut [0u8; 512]), Err(Overflow));
     }
 

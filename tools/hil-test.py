@@ -296,7 +296,7 @@ def main():
         run_error(c, "set no.such.key 1")
         run_error(c, "ca 2")
         s = status(c)
-        for key in ("firmware", "boot", "gateway id", "config", "mac", "ip", "time", "uptime", "mqtt"):
+        for key in ("firmware", "boot", "security", "gateway id", "config", "mac", "ip", "time", "uptime", "mqtt"):
             if key not in s:
                 fail(f"status has no {key} line")
         if not re.fullmatch(r"[0-9a-f]{16}", s["gateway id"]):
@@ -353,6 +353,8 @@ def main():
         text = pb_decode("GatewayStats", mqtt_sub(topic("event/stats"), wait=35))
         if state["id"] not in text:
             fail("GatewayStats without the gateway id")
+        if 'key: "secure_boot"' not in text:
+            fail("GatewayStats without the security metadata")
 
     def uplink():
         text = pb_decode("UplinkFrame", mqtt_sub(topic("event/up"), wait=15))

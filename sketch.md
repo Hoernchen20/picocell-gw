@@ -855,6 +855,25 @@ Milestones:
     rolls back, lower rollback version refused, `explicit_buy` bumps the OTP
     rollback thermometer. Slots 1–3 stay free for key rotation (revocation via
     `KEY_INVALID`).
+  - Status (2026-10-26): tooling done, lock board tests open. `fw/keys/test-signing.pem`
+    (secp256k1, committed). The runner (and so `ota-push.py`) signs when
+    `PICOCELL_SIGNING_KEY` is set and then checks the image with
+    `tools/verify-image.py` (block loop, last IMAGE_DEF, SHA-256 over the load map and
+    the block up to HASH_DEF with the TBYB bit cleared, as picotool and the ROM do;
+    secp256k1 ECDSA in plain Python; key from the PEM via openssl; prints the
+    BOOTKEY hash). `--features production` puts the symbol `PICOCELL_PRODUCTION` in the
+    ELF: the runner refuses to seal it without a key and adds `--rollback` from
+    `[package.metadata.picocell]` (1 for now; picotool's default rows 0x04e/0x051).
+    `status` (`security` line), the boot log and `GatewayStats` metadata (`variant`,
+    `secure_boot`, `debug`, `boot_keys`; metadata map raised to 8 entries) show the
+    build and the OTP state, read only (OTP `CRITICAL` register, `BOOT_FLAGS1` by
+    majority of its three rows). `tools/test-signing.py --production ELF` 11/11.
+    Signed dev images on a dev board: `hil-test.py --flash --ota` 20/20 (UF2 and OTA,
+    the ROM boots a signed image without secure boot as before).
+  - Findings: the sealed image has two IMAGE_DEF blocks, the firmware's own (unsigned)
+    and picotool's; the ROM and picotool take the last one in the loop. The hash
+    covers the image type word with the TBYB bit cleared, which is why it still
+    verifies after `explicit_buy` rewrites that word.
 - **8d. OTP AES key**
   - Key source abstraction: dev = HMAC(chip ID), production = OTP page.
   - At boot read the key page, then soft-lock it until reset. Unwritten page (all

@@ -5,8 +5,13 @@ drive.
 Used as the cargo runner in fw/.cargo/config.toml, so `cargo run --release` builds,
 seals, converts and, if a board in BOOTSEL mode is mounted (drive "RP2350"), flashes
 it. Sealing (`picotool seal --hash`, sketch.md section 8.1) adds the SHA-256 and the
-major/minor version from fw/Cargo.toml as a second IMAGE_DEF; no rollback version in
-dev builds. picotool is taken from $PICOTOOL, the PATH or ~/.local/bin.
+major/minor version from fw/Cargo.toml as a second IMAGE_DEF. With $PICOCELL_SIGNING_KEY
+(a secp256k1 PEM, e.g. fw/keys/test-signing.pem) the image is also signed and then
+checked with tools/verify-image.py against that key. A production build (`--features
+production`, marked by the symbol PICOCELL_PRODUCTION) is refused without a key and gets
+the rollback version from fw/Cargo.toml; dev builds have none, so buying one never
+writes the OTP rollback rows. picotool is taken from $PICOTOOL, the PATH or
+~/.local/bin.
 
     elf2uf2-rp2350.py <firmware.elf> [--no-copy]
 """
@@ -19,6 +24,9 @@ import subprocess
 import struct
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.dont_write_bytecode = True
 
 UF2_MAGIC_START0 = 0x0A324655
 UF2_MAGIC_START1 = 0x9E5D5157
@@ -39,16 +47,52 @@ def picotool():
     return found
 
 
+def has_symbol(elf: bytes, name: bytes) -> bool:
+    """Whether the ELF's symbol table has `name`."""
+    e_shoff, = struct.unpack_from("<I", elf, 0x20)
+    e_shentsize, e_shnum = struct.unpack_from("<HH", elf, 0x2E)
+    sections = [struct.unpack_from("<10I", elf, e_shoff + i * e_shentsize) for i in range(e_shnum)]
+    for _name, sh_type, _flags, _addr, offset, size, link, _info, _align, entsize in sections:
+        if sh_type != 2:  # SHT_SYMTAB
+            continue
+        strtab = sections[link][4]
+        for o in range(offset, offset + size, entsize):
+            st_name, = struct.unpack_from("<I", elf, o)
+            start = strtab + st_name
+            if elf[start : elf.index(b"\0", start)] == name:
+                return True
+    return False
+
+
 def seal(elf_path: Path) -> Path:
-    """Writes <elf>.sealed.elf with hash and version; returns its path."""
-    m = re.search(r'^version = "(\d+)\.(\d+)\.\d+"', CARGO_TOML.read_text(), re.M)
+    """Writes <elf>.sealed.elf with hash, version and, with a key, signature; returns its
+    path."""
+    toml = CARGO_TOML.read_text()
+    m = re.search(r'^version = "(\d+)\.(\d+)\.\d+"', toml, re.M)
     if not m:
         sys.exit(f"no version in {CARGO_TOML}")
+    production = has_symbol(elf_path.read_bytes(), b"PICOCELL_PRODUCTION")
+    key = os.environ.get("PICOCELL_SIGNING_KEY")
+    if production and not key:
+        sys.exit("production build: set PICOCELL_SIGNING_KEY to the signing key (.pem)")
     out = elf_path.with_name(elf_path.name + ".sealed.elf")
-    cmd = [picotool(), "seal", "--quiet", "--hash", str(elf_path), "-t", "elf", str(out), "-t", "elf",
+    cmd = [picotool(), "seal", "--quiet", "--hash", *(["--sign"] if key else []),
+           str(elf_path), "-t", "elf", str(out), "-t", "elf", *([key] if key else []),
            "--major", m[1], "--minor", m[2]]
+    if production:
+        r = re.search(r"^\[package\.metadata\.picocell\][^\[]*?^rollback = (\d+)", toml, re.M | re.S)
+        if not r:
+            sys.exit(f"no rollback version in {CARGO_TOML} ([package.metadata.picocell])")
+        cmd += ["--rollback", r[1]]
     if subprocess.run(cmd).returncode != 0:
         sys.exit("picotool seal failed")
+    if key:
+        verify = __import__("verify-image")
+        try:
+            info = verify.check(flat(to_pages(load_segments(out.read_bytes()))), verify.public_key(key))
+        except verify.Invalid as e:
+            sys.exit(f"{out}: {e}")
+        print(f"signed ({'production' if production else 'dev'} build), boot key hash {info['boot_key_hash']}")
     return out
 
 
@@ -76,6 +120,16 @@ def to_pages(segments):
             page = pages.setdefault(a & ~(PAGE - 1), bytearray(PAGE))
             page[a % PAGE] = byte
     return sorted(pages.items())
+
+
+def flat(pages) -> bytes:
+    """The pages as flash contents from FLASH_START on, gaps as 0xff."""
+    if pages[0][0] != FLASH_START:
+        sys.exit(f"image does not start at {FLASH_START:#x}")
+    out = bytearray(b"\xff" * (pages[-1][0] + PAGE - FLASH_START))
+    for addr, data in pages:
+        out[addr - FLASH_START : addr - FLASH_START + len(data)] = data
+    return bytes(out)
 
 
 def to_uf2(pages) -> bytes:

@@ -584,6 +584,7 @@ async fn status(o: &mut Out<'_>, ctx: &Context, pending: &Settings) -> Result<()
         Some(b) => out!(o, "boot       {b}\r\n")?,
         None => o.write(b"boot       unknown\r\n").await?,
     }
+    out!(o, "security   {}\r\n", boot::security())?;
     if boot::trial() {
         let left = boot::BUY_DEADLINE_S.saturating_sub(up);
         out!(o, "trial      OTA image not bought yet: needs the broker within {left} s, else the old image boots\r\n")?;

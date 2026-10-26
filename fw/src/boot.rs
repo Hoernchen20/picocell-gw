@@ -15,7 +15,7 @@
 //! (the ROM reports both as a flash update boot; a mark in a watchdog scratch register
 //! tells them apart).
 
-use core::fmt;
+use core::fmt::{self, Write};
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use embassy_rp::block::{Architecture, IMAGE_TYPE_TBYB, ImageDef, Security, item_image_type_exe};
@@ -31,6 +31,90 @@ use crate::flash;
 #[used]
 static IMAGE_DEF: ImageDef =
     ImageDef::new([item_image_type_exe(Security::Secure, Architecture::Arm) | ((IMAGE_TYPE_TBYB as u32) << 16)]);
+
+/// Production builds carry this symbol; the runner then refuses to seal the image
+/// without a signing key (tools/elf2uf2-rp2350.py).
+#[cfg(feature = "production")]
+#[unsafe(no_mangle)]
+#[used]
+static PICOCELL_PRODUCTION: u8 = 1;
+
+/// "dev" or "prod".
+pub fn build() -> &'static str {
+    #[cfg(feature = "production")]
+    // Referenced, so the linker keeps the marker.
+    if unsafe { core::ptr::read_volatile(&PICOCELL_PRODUCTION) } == 1 {
+        return "prod";
+    }
+    "dev"
+}
+
+/// The security state in OTP, read only: critical flags as sampled at boot and the
+/// boot keys (`BOOT_FLAGS1`).
+#[derive(Clone, Copy)]
+pub struct OtpSecurity {
+    pub secure_boot: bool,
+    pub debug_disable: bool,
+    pub secure_debug_disable: bool,
+    pub keys_valid: u8,
+    pub keys_invalid: u8,
+}
+
+pub fn security() -> OtpSecurity {
+    let crit = pac::OTP.critical().read();
+    let raw = pac::OTP_DATA_RAW;
+    // Three redundant 24-bit rows, majority vote as the ROM does.
+    let (a, b, c) = (raw.boot_flags1().read().0, raw.boot_flags1_r1().read(), raw.boot_flags1_r2().read());
+    let flags = (a & b) | (a & c) | (b & c);
+    OtpSecurity {
+        secure_boot: crit.secure_boot_enable(),
+        debug_disable: crit.debug_disable(),
+        secure_debug_disable: crit.secure_debug_disable(),
+        keys_valid: (flags & 0xf) as u8,
+        keys_invalid: (flags >> 8 & 0xf) as u8,
+    }
+}
+
+impl OtpSecurity {
+    pub fn secure_boot(&self) -> &'static str {
+        if self.secure_boot { "on" } else { "off" }
+    }
+
+    pub fn debug(&self) -> &'static str {
+        match (self.debug_disable, self.secure_debug_disable) {
+            (true, _) => "disabled",
+            (false, true) => "secure disabled",
+            (false, false) => "enabled",
+        }
+    }
+
+    /// Valid boot keys, e.g. "none" or "0 1(revoked)".
+    pub fn boot_keys(&self) -> heapless::String<32> {
+        let mut s = heapless::String::new();
+        for i in (0..4).filter(|i| self.keys_valid & 1 << i != 0) {
+            let revoked = if self.keys_invalid & 1 << i != 0 { "(revoked)" } else { "" };
+            let sep = if s.is_empty() { "" } else { " " };
+            let _ = write!(s, "{sep}{i}{revoked}");
+        }
+        if s.is_empty() {
+            let _ = s.push_str("none");
+        }
+        s
+    }
+}
+
+impl fmt::Display for OtpSecurity {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} build, secure boot {}, debug {}, boot keys {}",
+            build(),
+            self.secure_boot(),
+            self.debug(),
+            self.boot_keys()
+        )
+    }
+}
 
 // `get_sys_info` and `reboot` (pico-sdk boot/bootrom_constants.h, picoboot_constants.h).
 const SYS_INFO_BOOT_INFO: u32 = 0x0040;
@@ -108,6 +192,7 @@ pub fn start() {
         return;
     };
     info!("boot: {i}");
+    info!("boot: {}", security());
     if i.tbyb_and_update & BUY_PENDING == 0 {
         return;
     }

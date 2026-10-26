@@ -84,7 +84,11 @@ fn main() {
             Config::new().max_len(16),
         )
         .configure_many(
-            &[".gw.GatewayStats.tx_packets_per_modulation", ".gw.GatewayStats.rx_packets_per_modulation"],
+            &[
+                ".gw.GatewayStats.tx_packets_per_modulation",
+                ".gw.GatewayStats.rx_packets_per_modulation",
+                ".gw.GatewayStats.metadata",
+            ],
             Config::new().max_len(8),
         )
         .configure_many(SKIP, Config::new().skip(true));

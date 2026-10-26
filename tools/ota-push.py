@@ -5,9 +5,9 @@
                       [--user U] [--password PW] [--prefix eu868]
                       [--truncate BYTES] [--bad-sha256]
 
-Seals the ELF (default: the fw/ release build) as the cargo runner does, sends the image
-(the flash contents from 0x10000000 on, as in the UF2) to command/ota in 4 KB chunks and
-follows the answers on state/ota. The gateway writes the slot that is not running,
+Seals the ELF (default: the fw/ release build) as the cargo runner does (signed with
+$PICOCELL_SIGNING_KEY if set), sends the image (the flash contents from 0x10000000 on,
+as in the UF2) to command/ota in 4 KB chunks and follows the answers on state/ota. The gateway writes the slot that is not running,
 checks the SHA-256 and reboots into the new image; that one has to reach the broker
 within 5 minutes, otherwise the gateway falls back to the old image. Defaults: the test
 broker (tools/test-broker) with the admin user.
@@ -141,17 +141,10 @@ class Mqtt:
 
 def image(elf_path):
     """The sealed image as flat bytes from the start of the slot."""
-    pages = elf2uf2.to_pages(elf2uf2.load_segments(elf2uf2.seal(elf_path).read_bytes()))
-    start = elf2uf2.FLASH_START
-    if pages[0][0] != start:
-        sys.exit(f"image does not start at {start:#x}")
-    end = pages[-1][0] + elf2uf2.PAGE
-    out = bytearray(b"\xff" * (end - start))
-    for addr, data in pages:
-        out[addr - start : addr - start + len(data)] = data
+    out = elf2uf2.flat(elf2uf2.to_pages(elf2uf2.load_segments(elf2uf2.seal(elf_path).read_bytes())))
     if len(out) > SLOT_SIZE:
         sys.exit(f"image ({len(out)} bytes) does not fit a slot ({SLOT_SIZE})")
-    return bytes(out)
+    return out
 
 
 def main():

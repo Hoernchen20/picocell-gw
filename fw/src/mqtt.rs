@@ -455,7 +455,16 @@ async fn session(
 fn stats(gateway_id: &str, buf: &mut [u8]) -> usize {
     let mut build = heapless::String::<32>::new();
     let _ = write!(build, "{}", Utc(config::build_time()));
-    let metadata = [("firmware", env!("CARGO_PKG_VERSION")), ("build", build.as_str())];
+    let sec = boot::security();
+    let boot_keys = sec.boot_keys();
+    let metadata = [
+        ("firmware", env!("CARGO_PKG_VERSION")),
+        ("build", build.as_str()),
+        ("variant", boot::build()),
+        ("secure_boot", sec.secure_boot()),
+        ("debug", sec.debug()),
+        ("boot_keys", boot_keys.as_str()),
+    ];
     // The session only runs once the clock is set.
     let time_us = clock::now_unix_us().unwrap_or(0);
     let (tx_received, tx_emitted) = downlink::take_counters();

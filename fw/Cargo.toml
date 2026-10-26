@@ -4,6 +4,16 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[features]
+# Signed image (the runner needs PICOCELL_SIGNING_KEY) with a rollback version; see
+# sketch.md section 8.1.
+production = []
+
+[package.metadata.picocell]
+# Anti-rollback version of production images (OTP thermometer, raised when an image
+# is bought); bump it when an older image must no longer boot.
+rollback = 1
+
 [dependencies]
 embassy-executor = "0.10.0"
 embassy-time = "0.5.1"

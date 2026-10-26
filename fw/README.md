@@ -97,6 +97,35 @@ not a reboot of the gateway; then run `ota-push.py` again.
 Fault options for tests: `--bad-sha256` (refused after the last chunk), `--truncate
 BYTES` (the gateway keeps running the old image).
 
+### Signing
+
+Without a key the image is only hashed: dev boards (no secure boot in OTP) boot it as
+it is. With `PICOCELL_SIGNING_KEY` set to a secp256k1 PEM key, the runner and
+`ota-push.py` also sign it (`picotool seal --sign`) and check the result with
+`tools/verify-image.py`, which recomputes hash and signature in plain Python against
+the key:
+
+```sh
+PICOCELL_SIGNING_KEY=$PWD/keys/test-signing.pem cargo run --release
+../tools/verify-image.py target/thumbv8m.main-none-eabihf/release/picocell-gw.uf2
+```
+
+[keys/test-signing.pem](keys/test-signing.pem) is a test key, committed on purpose:
+only for boards whose OTP holds its hash (a lock board, sketch.md section 8.1), never
+for real gateways. The production key is separate and stays offline. `verify-image.py`
+prints the boot key hash that goes into OTP `BOOTKEY0`.
+
+`cargo run --release --features production` builds a production image: the runner
+refuses it without a key and adds the rollback version from `[package.metadata.picocell]`
+in [Cargo.toml](Cargo.toml) (dev images have none, so buying one never touches the OTP
+rollback rows). `status` and the `GatewayStats` metadata show the build (`dev`/`prod`)
+and, read from OTP, secure boot, debug disable and the valid boot keys.
+
+`tools/test-signing.py [--production ELF]` tests the tooling on the host: picotool
+and `verify-image.py` agree, tampered code or signature and another key fail, the
+cleared TBYB flag (after `explicit_buy`) still verifies, a production build without a
+key is refused.
+
 ## Configuration and provisioning
 
 The config lives in the last 64 KB of flash (behind both image slots, so flashing
