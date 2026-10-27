@@ -19,6 +19,7 @@ mod console;
 mod downlink;
 mod flash;
 mod ids;
+mod login;
 mod mqtt;
 mod ota;
 mod resolve;

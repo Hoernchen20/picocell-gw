@@ -13,9 +13,12 @@ Needs the board on USB and Ethernet, and the test broker running on this machine
    (the boot line, i.e. slot and boot type, is logged), the config key's OTP page read
    at boot and soft-locked since, "otp-key init" refused in a dev build.
 3. Provisions tools/test-broker/gateway.conf with net.hosts pointing at this machine
-   (--broker-ip, default: the address of the default route) and registers the gateway
-   with the broker. With --no-provision the stored config is kept and the board is
-   rebooted instead, so both ways the duty cycle starts from zero.
+   (--broker-ip, default: the address of the default route) and a console password
+   (CONSOLE_PASSWORD, or $PICOCELL_CONSOLE_PASSWORD), and registers the gateway with
+   the broker. Then the login: commands refused while locked, a wrong password
+   answered after the delay, logout. With --no-provision the stored config is kept
+   and the board is rebooted instead, so both ways the duty cycle starts from zero.
+   A locked console is logged in with that password whenever it is opened.
 4. Waits for "mqtt connected" in "status", then checks ConnState, GatewayStats and an
    UplinkFrame on the broker.
 5. Downlinks via tools/test-downlink.sh and tools/test-classc.sh against the statuses
@@ -62,6 +65,7 @@ BROKER = os.path.join(TOOLS, "test-broker")
 PASSWD = os.path.join(BROKER, "out/passwd")
 CA = os.path.join(BROKER, "out/ca.pem")
 NEXT_CA = os.path.join(BROKER, "out/next/ca.pem")
+CONSOLE_PASSWORD = os.environ.get("PICOCELL_CONSOLE_PASSWORD") or "hil-console-pw"
 
 
 class Failed(Exception):
@@ -124,8 +128,11 @@ def open_console(device, timeout=30):
             if time.monotonic() > end:
                 fail(f"console {device} did not appear within {timeout} s")
             time.sleep(0.2)
-    c.read_until(b'"help" for commands', 5)
-    c.read_until(provision.PROMPT, 2)
+    c.locked = c.greet()
+    if c.locked:
+        err = c.login(CONSOLE_PASSWORD)
+        if err is not None:
+            fail(f"login: {err} (CONSOLE_PASSWORD, or $PICOCELL_CONSOLE_PASSWORD)")
     return c
 
 
@@ -328,13 +335,34 @@ def main():
         log(f"broker at {ip}")
         script(os.path.join("test-broker", "add-gateway.sh"), state["id"])
         r = subprocess.run([sys.executable, os.path.join(TOOLS, "provision.py"), "-d", state["device"],
-                            os.path.join(BROKER, "gateway.conf"), f"net.hosts=mqtt.test={ip}"],
-                           capture_output=True, text=True)
+                            os.path.join(BROKER, "gateway.conf"), f"net.hosts=mqtt.test={ip}",
+                            f"console.password={CONSOLE_PASSWORD}"],
+                           capture_output=True, text=True,
+                           env={**os.environ, "PICOCELL_CONSOLE_PASSWORD": CONSOLE_PASSWORD})
         if r.returncode != 0:
             fail((r.stderr or r.stdout).strip())
         wait_gone(state["device"])
         state["c"] = open_console(state["device"])
         run(state["c"], "log off")
+
+    def login():
+        c = state["c"]
+        if not c.locked:
+            fail("console not locked after provisioning with console.password")
+        run(c, "logout")
+        for line in ("show", "set mqtt.host evil.example", "commit", "bootsel"):
+            err = run_error(c, line)
+            if "locked" not in err:
+                fail(f"{line} while locked: {err}")
+        run(c, "status")
+        t = time.monotonic()
+        err = c.login("wrong-password")
+        if err != "wrong password" or time.monotonic() - t < 2.5:
+            fail(f"wrong password: {err!r} after {time.monotonic() - t:.1f} s, 3 s delay expected")
+        err = c.login(CONSOLE_PASSWORD)
+        if err is not None:
+            fail(f"login: {err}")
+        run(c, "show")
 
     def reboot():
         state["c"] = restart(state["c"], state["device"], "reboot")
@@ -607,6 +635,7 @@ def main():
         check("reboot", reboot, critical=True)
     else:
         check("provision", provisioning, critical=True)
+        check("console login", login)
     check("mqtt connect", connected, critical=True)
     check("ConnState ONLINE", conn_state)
     check("GatewayStats", stats)

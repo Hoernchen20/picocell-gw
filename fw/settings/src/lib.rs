@@ -7,6 +7,7 @@
 
 #![no_std]
 
+use core::fmt::Write as _;
 use core::net::Ipv4Addr;
 use core::str::FromStr;
 
@@ -33,6 +34,8 @@ enum Kind {
     Port,
     Prefix,
     Secret,
+    /// `iterations$salt$hash` of a password (`PasswordHash`).
+    Hash,
 }
 
 pub struct Key {
@@ -45,7 +48,12 @@ pub struct Key {
 impl Key {
     /// Never printed; shown as `***`.
     pub fn secret(&self) -> bool {
-        self.kind == Kind::Secret
+        matches!(self.kind, Kind::Secret | Kind::Hash)
+    }
+
+    /// Set as a hash; the console asks for the password itself.
+    pub fn hashed(&self) -> bool {
+        self.kind == Kind::Hash
     }
 }
 
@@ -54,7 +62,7 @@ const fn key(name: &'static str, kind: Kind, default: &'static str) -> Key {
 }
 
 /// The text keys; the CA certificates are `tls.ca0` and `tls.ca1`.
-pub const KEYS: [Key; 10] = [
+pub const KEYS: [Key; 11] = [
     key("net.mode", Kind::Mode, "static"),
     key("net.ipv4", Kind::Cidr, ""),
     key("net.gateway", Kind::Addr, ""),
@@ -65,6 +73,7 @@ pub const KEYS: [Key; 10] = [
     key("mqtt.port", Kind::Port, "8883"),
     key("mqtt.topic_prefix", Kind::Prefix, "eu868"),
     key("mqtt.password", Kind::Secret, ""),
+    key("console.password", Kind::Hash, ""),
 ];
 
 pub const CA_KEYS: [&str; CA_SLOTS] = ["tls.ca0", "tls.ca1"];
@@ -139,6 +148,10 @@ fn check(kind: Kind, v: &str) -> Result<(), &'static str> {
             (1..=64).contains(&v.len()) && v.bytes().all(|b| b.is_ascii_graphic()),
             "1 to 64 printable characters expected, no blanks",
         ),
+        Kind::Hash => (
+            PasswordHash::parse(v).is_some(),
+            "iterations$salt$hash expected (PBKDF2-HMAC-SHA256, hex), or no value to type the password",
+        ),
     };
     if ok { Ok(()) } else { Err(expected) }
 }
@@ -146,6 +159,60 @@ fn check(kind: Kind, v: &str) -> Result<(), &'static str> {
 /// Checks a new `mqtt.password` as it is, without the trimming of `Settings::set`.
 pub fn check_password(v: &str) -> Result<(), &'static str> {
     check(Kind::Secret, v)
+}
+
+/// Console password as stored: PBKDF2-HMAC-SHA256 with `iterations` over a random
+/// `salt`, as `iterations$salt$hash` with salt and hash in lowercase hex.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct PasswordHash {
+    pub iterations: u32,
+    pub salt: [u8; 16],
+    pub hash: [u8; 32],
+}
+
+impl PasswordHash {
+    /// Most iterations accepted, so a stored hash cannot stall the console for long.
+    pub const MAX_ITERATIONS: u32 = 100_000;
+
+    pub fn parse(s: &str) -> Option<Self> {
+        fn hex<const N: usize>(s: &str) -> Option<[u8; N]> {
+            let s = s.as_bytes();
+            if s.len() != 2 * N {
+                return None;
+            }
+            let digit = |c: u8| match c {
+                b'0'..=b'9' => Some(c - b'0'),
+                b'a'..=b'f' => Some(c - b'a' + 10),
+                _ => None,
+            };
+            let mut out = [0; N];
+            for (o, pair) in out.iter_mut().zip(s.chunks(2)) {
+                *o = digit(pair[0])? << 4 | digit(pair[1])?;
+            }
+            Some(out)
+        }
+        let mut parts = s.split('$');
+        let (i, salt, hash) = (parts.next()?, parts.next()?, parts.next()?);
+        if parts.next().is_some() || !i.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let iterations = u32::from_str(i).ok().filter(|i| (1..=Self::MAX_ITERATIONS).contains(i))?;
+        Some(Self { iterations, salt: hex(salt)?, hash: hex(hash)? })
+    }
+
+    /// The stored form.
+    pub fn format(&self) -> String<{ 6 + 1 + 32 + 1 + 64 }> {
+        let mut s = String::new();
+        let _ = write!(s, "{}$", self.iterations);
+        for b in self.salt {
+            let _ = write!(s, "{b:02x}");
+        }
+        let _ = s.push('$');
+        for b in self.hash {
+            let _ = write!(s, "{b:02x}");
+        }
+        s
+    }
 }
 
 /// An X.509 certificate is one DER SEQUENCE: checks its header against the length.
@@ -261,6 +328,10 @@ impl Settings {
         if self.ca[0].is_empty() {
             return Some(CA_KEYS[0]);
         }
+        // An open console could send the MQTT password to another broker.
+        if cfg!(feature = "production") && self.get("console.password").is_none() {
+            return Some("console.password");
+        }
         None
     }
 
@@ -304,6 +375,11 @@ impl Settings {
 
     pub fn mqtt_password(&self) -> &str {
         self.value("mqtt.password")
+    }
+
+    /// Login required on the console.
+    pub fn console_password(&self) -> Option<PasswordHash> {
+        self.get("console.password").and_then(PasswordHash::parse)
     }
 
     /// The stored form: format byte, then the text and each CA slot with a 16-bit
@@ -432,12 +508,17 @@ mod tests {
 
     const PEM: &str = include_str!("../test-ca.pem");
     const DER: &[u8] = include_bytes!("../test-ca.der");
+    /// "console-pw", salt 00..0f: `python3 -c 'import hashlib; print(hashlib.pbkdf2_hmac(
+    /// "sha256", b"console-pw", bytes(range(16)), 10000).hex())'`
+    const HASH: &str = "10000$000102030405060708090a0b0c0d0e0f$\
+                        693418c7324cb9a01f51bb2baf51a612dab2f1e8576ca308e7a640c7e443689d";
 
     fn provisioned() -> Settings {
         let mut s = Settings::new();
         s.set("net.ipv4", " 10.0.0.20/24 ").unwrap();
         s.set("mqtt.host", "mqtt.example.org").unwrap();
         s.set("mqtt.password", r#"p@ss"%{}=\w'rd"#).unwrap();
+        s.set("console.password", HASH).unwrap();
         s.set_ca(0, DER).unwrap();
         s
     }
@@ -520,6 +601,38 @@ mod tests {
         s.set("net.mode", "dhcp").unwrap();
         assert_eq!(s.missing(), Some("tls.ca0"));
         assert_eq!(Settings::new().missing(), Some("net.ipv4"));
+        let mut s = provisioned();
+        s.unset("console.password").unwrap();
+        let want = if cfg!(feature = "production") { Some("console.password") } else { None };
+        assert_eq!(s.missing(), want);
+    }
+
+    #[test]
+    fn password_hash() {
+        let h = PasswordHash::parse(HASH).unwrap();
+        assert_eq!(h.iterations, 10000);
+        assert_eq!(h.salt, core::array::from_fn(|i| i as u8));
+        assert_eq!((h.hash[0], h.hash[31]), (0x69, 0x9d));
+        assert_eq!(h.format().as_str(), HASH);
+        let s = provisioned();
+        assert_eq!(s.console_password(), Some(h));
+        assert!(find("console.password").unwrap().secret());
+        let max = PasswordHash { iterations: PasswordHash::MAX_ITERATIONS, ..h };
+        assert_eq!(PasswordHash::parse(&max.format()), Some(max));
+        for bad in [
+            "",
+            "console-pw",
+            "0$000102030405060708090a0b0c0d0e0f$00",
+            &HASH.replace("10000$", "100001$"),
+            &HASH.replace("10000$", "+10000$"),
+            &HASH.replace("$0001", "$0X01"),
+            &HASH.replace("$0001", "$0A01"),
+            &HASH[..HASH.len() - 2],
+            &[HASH, "$00"].concat(),
+        ] {
+            assert_eq!(PasswordHash::parse(bad), None, "{bad}");
+            assert!(Settings::new().set("console.password", bad).is_err());
+        }
     }
 
     #[test]
@@ -557,6 +670,8 @@ mod tests {
         s.set("ntp.servers", &ntp).unwrap();
         s.set("mqtt.host", &host).unwrap();
         s.set("mqtt.password", &"p".repeat_into::<64>()).unwrap();
+        let h = PasswordHash { iterations: PasswordHash::MAX_ITERATIONS, salt: [0xff; 16], hash: [0xff; 32] };
+        s.set("console.password", &h.format()).unwrap();
         s.set("net.ipv4", "255.255.255.255/32").unwrap();
         s.set("net.gateway", "255.255.255.255").unwrap();
         s.set("net.dns", "255.255.255.255,255.255.255.255,255.255.255.255").unwrap();

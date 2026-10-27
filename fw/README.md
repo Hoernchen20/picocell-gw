@@ -153,6 +153,7 @@ provisioning mode and says so on the console.
 | `mqtt.port` | `8883` | |
 | `mqtt.topic_prefix` | `eu868` | |
 | `mqtt.password` | | required; 1 to 64 printable ASCII characters, no blanks; the username is the gateway ID |
+| `console.password` | | console login, below; required in production builds |
 | `tls.ca0`, `tls.ca1` | | broker CA (PEM via `ca 0` / `ca 1`); `tls.ca0` required |
 
 With `tls.ca1` set, a failed TLS handshake makes the next attempt use the other slot
@@ -166,7 +167,9 @@ tools/provision.py tools/test-broker/gateway.conf net.hosts=mqtt.test=<IP of the
 [gateway.conf](../tools/test-broker/gateway.conf) uses DHCP and reads the password and
 CA from `tools/test-broker/out/`. On the console the same works by hand: `show`, `set
 <key> <value>`, `ca 0` and paste the PEM file, `commit`. A value starting with `@` in
-a config file names a file; write `@@` for a literal `@`.
+a config file names a file; write `@@` for a literal `@`. `provision.py` hashes
+`console.password` before sending it, and logs in first if the console is locked
+(password from `$PICOCELL_CONSOLE_PASSWORD`, else it asks).
 
 ### Remote password change
 
@@ -256,9 +259,21 @@ new lines appear live above the input line. Commands (`help` lists them):
 | `erase` | delete the stored config and restart in provisioning mode |
 | `reboot` | restart |
 | `bootsel` | restart into the USB bootloader, so `cargo run` flashes without the button |
+| `login` / `logout` | unlock / lock the console, with `console.password` set |
 
 Each command ends with `ok` or `error: ...` on its own line. Changes stay in RAM until
-`commit`; `status` notes uncommitted ones. MAC and gateway ID are
+`commit`; `status` notes uncommitted ones.
+
+With `console.password` stored, the console opens locked: only `help`, `status`, `log`,
+`login`, `logout` and `erase` work until `login` and the password (no echo). It locks
+again on `logout`, when the port closes, and after 10 minutes without input. A wrong
+password delays the answer, 3 s doubling to 60 s, until a correct one or a restart.
+`set console.password` asks for the new password twice and stores it as
+PBKDF2-HMAC-SHA256 (10000 iterations, random salt, `iterations$salt$hash`; such a
+hash can also be given as the value). Forgotten password: `erase` works without login
+and deletes the whole config, MQTT password included, so the board has to be
+provisioned again.
+ MAC and gateway ID are
 derived from the RP2350 chip ID, so several boards can share a network; the boot
 message and `status` show them. Register each board with the broker using that ID:
 

@@ -9,3 +9,7 @@ publish = false
 #   cargo test --target x86_64-unknown-linux-gnu
 [dependencies]
 heapless = "0.9"
+
+[features]
+# console.password is required (part of `missing`).
+production = []

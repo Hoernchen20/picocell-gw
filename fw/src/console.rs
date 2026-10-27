@@ -9,6 +9,9 @@
 //!
 //! The config is edited in a RAM copy (`show`, `set`, `unset`, `ca`) and stored with
 //! `commit`, which restarts the gateway with it. Secrets are never printed.
+//!
+//! With `console.password` stored, most commands need `login` first (`crate::login`);
+//! a session is logged out when the port closes or after 10 minutes without input.
 
 use core::cell::RefCell;
 use core::fmt::Write as _;
@@ -17,7 +20,7 @@ use core::sync::atomic::{AtomicU8, Ordering};
 use console::{Action, Editor, History, Read, Trunc};
 use critical_section::Mutex;
 use embassy_futures::join::join3;
-use embassy_futures::select::{Either, Either3, select, select3};
+use embassy_futures::select::{Either, Either4, select, select4};
 use embassy_crypto::Sha256;
 use embassy_net::Stack;
 use embassy_rp::peripherals::USB;
@@ -25,20 +28,20 @@ use embassy_rp::usb::Driver;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::pipe::Pipe;
 use embassy_sync::signal::Signal;
-use embassy_time::{Instant, Timer};
+use embassy_time::{Duration, Instant, Timer};
 use embassy_usb::class::cdc_acm::{CdcAcmClass, ControlChanged, Receiver, Sender, State};
 use embassy_usb::driver::EndpointError;
 use embassy_usb::{Builder, Config};
-use heapless::Vec;
+use heapless::{String, Vec};
 use jit::duty::EU868;
 use log::{Level, LevelFilter, Metadata, Record};
-use settings::{CA_KEYS, KEYS, Pem};
+use settings::{CA_KEYS, KEYS, Pem, check_password};
 use static_cell::StaticCell;
 use wire::time::Utc;
 
 use crate::config::Settings;
 use crate::ids::Ids;
-use crate::{boot, clock, config, config_key, downlink, mqtt};
+use crate::{boot, clock, config, config_key, downlink, login, mqtt};
 
 type Usb = Driver<'static, USB>;
 
@@ -54,6 +57,8 @@ const LEVELS: [&str; 3] = ["off", "warn", "info"];
 
 const PROMPT: &str = "picocell> ";
 const PACKET: usize = 64;
+/// A logged-in session without input is logged out after this.
+const IDLE: Duration = Duration::from_secs(600);
 
 struct Logger;
 
@@ -287,6 +292,11 @@ enum Input {
     Pem(usize, Pem),
     /// "yes" to write the config key into OTP.
     ConfirmOtpKey,
+    /// The console password, to log in.
+    Login,
+    /// A new console password, then the same again.
+    NewPassword,
+    RepeatPassword(String<64>),
 }
 
 fn prompt(input: &Input) -> &'static str {
@@ -295,20 +305,27 @@ fn prompt(input: &Input) -> &'static str {
         Input::Secret(_) => "value: ",
         Input::Pem(..) => "",
         Input::ConfirmOtpKey => "write the key? ",
+        Input::Login => "password: ",
+        Input::NewPassword => "new password: ",
+        Input::RepeatPassword(_) => "again: ",
     }
+}
+
+/// Echoed as `*`.
+fn masked(input: &Input) -> bool {
+    matches!(input, Input::Secret(_) | Input::Login | Input::NewPassword | Input::RepeatPassword(_))
 }
 
 /// Prompt and the line typed so far, secrets masked.
 async fn redraw(o: &mut Out<'_>, input: &Input, editor: &Editor<LINE>) -> Result<(), Gone> {
     o.write(prompt(input).as_bytes()).await?;
-    match input {
-        Input::Secret(_) => {
-            for _ in 0..editor.line().len() {
-                o.write(b"*").await?;
-            }
-            Ok(())
+    if masked(input) {
+        for _ in 0..editor.line().len() {
+            o.write(b"*").await?;
         }
-        _ => o.write(editor.line().as_bytes()).await,
+        Ok(())
+    } else {
+        o.write(editor.line().as_bytes()).await
     }
 }
 
@@ -321,24 +338,30 @@ async fn session(
     INPUT.clear();
     let mut editor: Editor<LINE> = Editor::new();
     let mut input = Input::Command;
+    let mut logged_in = !login::required();
+    let mut last_input = Instant::now();
     let mut cursor = critical_section::with(|cs| HISTORY.borrow_ref(cs).oldest());
     o.write(b"\r\n").await?;
     log_lines(o, &mut cursor, LEVEL.load(Ordering::Relaxed), b"").await?;
     out!(o, "picocell-gw {} console, \"help\" for commands\r\n", env!("CARGO_PKG_VERSION"))?;
-    if !config::provisioned() {
+    if !logged_in {
+        o.write(b"console locked: \"login\" first, \"help\" lists the commands\r\n").await?;
+    } else if !config::provisioned() {
         o.write(b"provisioning mode: \"show\" lists the keys, \"set\" them, then \"commit\"\r\n").await?;
     }
     o.write(PROMPT.as_bytes()).await?;
     o.flush().await?;
     loop {
         let mut rx = [0u8; 64];
-        match select3(INPUT.read(&mut rx), LOGGED.wait(), control.control_changed()).await {
-            Either3::First(n) => {
+        let idle = if logged_in && login::required() { last_input + IDLE } else { Instant::MAX };
+        match select4(INPUT.read(&mut rx), LOGGED.wait(), control.control_changed(), Timer::at(idle)).await {
+            Either4::First(n) => {
+                last_input = Instant::now();
                 for &b in &rx[..n] {
                     match editor.feed(b) {
                         Action::None => {}
                         Action::Echo(c) => {
-                            let c = if matches!(input, Input::Secret(_)) { b'*' } else { c };
+                            let c = if masked(&input) { b'*' } else { c };
                             o.write(&[c]).await?
                         }
                         Action::Erase => o.write(b"\x08 \x08").await?,
@@ -360,7 +383,29 @@ async fn session(
                             let line = editor.take();
                             let line = core::str::from_utf8(&line).unwrap_or("");
                             input = match core::mem::replace(&mut input, Input::Command) {
-                                Input::Command => command(o, line, &mut cursor, ctx, pending).await?,
+                                Input::Command => command(o, line, &mut cursor, ctx, pending, &mut logged_in).await?,
+                                Input::Login => {
+                                    let r = login::check(line).await;
+                                    logged_in |= r.is_ok();
+                                    reply(o, r).await?;
+                                    Input::Command
+                                }
+                                Input::NewPassword => match check_password(line) {
+                                    Ok(()) => Input::RepeatPassword(String::try_from(line).unwrap()),
+                                    Err(e) => {
+                                        reply(o, Err(e)).await?;
+                                        Input::Command
+                                    }
+                                },
+                                Input::RepeatPassword(first) => {
+                                    let r = if line == first {
+                                        pending.set("console.password", &login::hash(line).await.format())
+                                    } else {
+                                        Err("the passwords differ")
+                                    };
+                                    reply(o, r).await?;
+                                    Input::Command
+                                }
                                 Input::Secret(key) => {
                                     reply(o, pending.set(key, line)).await?;
                                     Input::Command
@@ -398,9 +443,16 @@ async fn session(
                     }
                 }
             }
-            Either3::Second(()) => {}
+            Either4::Second(()) => {}
             // Closed, or opened again (see `opened`).
-            Either3::Third(()) => return Ok(()),
+            Either4::Third(()) => return Ok(()),
+            Either4::Fourth(()) => {
+                logged_in = false;
+                input = Input::Command;
+                editor.take();
+                o.write(b"\r\x1b[Klogged out after 10 minutes without input\r\n").await?;
+                o.write(PROMPT.as_bytes()).await?;
+            }
         }
         // New log lines go above the input line, which is then redrawn.
         if log_lines(o, &mut cursor, LEVEL.load(Ordering::Relaxed), b"\r\x1b[K").await? {
@@ -417,6 +469,7 @@ log off|warn|info    set the live log level (until reboot)\r\n\
 log show [lines]     print the log history, or its last lines\r\n\
 show                 the config being edited, secrets as ***\r\n\
 set <key> <value>    change a key; \"set mqtt.password\" asks without echo\r\n\
+set console.password asks for a new console password twice, without echo\r\n\
 unset <key>          back to the default (or none); also tls.ca0 and tls.ca1\r\n\
 ca 0|1               paste a CA certificate (PEM) into tls.ca0 or tls.ca1\r\n\
 clear                start from an empty config\r\n\
@@ -426,7 +479,9 @@ erase                delete the stored config and restart (provisioning mode)\r\
 otp-key              state of the config key and its OTP page\r\n\
 otp-key init         production only: write a random config key into OTP and restart\r\n\
 reboot               restart\r\n\
-bootsel              restart into the USB bootloader (RP2350 drive) for flashing\r\n";
+bootsel              restart into the USB bootloader (RP2350 drive) for flashing\r\n\
+login                with console.password set: needed for all but help, status, log and erase\r\n\
+logout               lock the console again (also on closing the port, or 10 minutes idle)\r\n";
 
 async fn reply(o: &mut Out<'_>, r: Result<(), &str>) -> Result<(), Gone> {
     match r {
@@ -454,10 +509,15 @@ async fn command(
     cursor: &mut u64,
     ctx: &Context,
     pending: &mut Settings,
+    logged_in: &mut bool,
 ) -> Result<Input, Gone> {
     let line = line.trim();
     let (cmd, rest) = line.split_once(' ').map_or((line, ""), |(c, r)| (c, r.trim_start()));
     if cmd.is_empty() {
+        return Ok(Input::Command);
+    }
+    if !*logged_in && !matches!(cmd, "help" | "status" | "log" | "login" | "logout" | "erase") {
+        reply(o, Err("console locked, \"login\" first")).await?;
         return Ok(Input::Command);
     }
     let mut args = rest.split_whitespace();
@@ -503,6 +563,10 @@ async fn command(
             // The value is the rest of the line, blanks included.
             let value = rest[key.len()..].trim();
             match KEYS.iter().find(|k| k.name == key) {
+                Some(k) if value.is_empty() && k.hashed() => {
+                    o.write(b"enter the new password twice (not shown), Ctrl-C cancels\r\n").await?;
+                    return Ok(Input::NewPassword);
+                }
                 Some(k) if value.is_empty() && k.secret() => {
                     o.write(b"enter the value (not shown), Ctrl-C cancels\r\n").await?;
                     return Ok(Input::Secret(k.name));
@@ -554,11 +618,19 @@ async fn command(
             Err(e) => Err(e),
         },
         ("otp-key", Some(_), None) => Err("\"init\" or nothing expected"),
+        ("login", None, _) if login::required() => {
+            return Ok(Input::Login);
+        }
+        ("logout", None, _) if login::required() => {
+            *logged_in = false;
+            Ok(())
+        }
+        ("login" | "logout", None, _) => Err("no console password set"),
         ("reboot", None, _) => restart(o, false).await,
         ("bootsel", None, _) => restart(o, true).await,
         (
             "help" | "status" | "log" | "show" | "unset" | "clear" | "discard" | "commit" | "erase" | "otp-key"
-            | "reboot" | "bootsel",
+            | "reboot" | "bootsel" | "login" | "logout",
             _,
             _,
         ) => Err("too many arguments"),

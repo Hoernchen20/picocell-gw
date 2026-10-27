@@ -7,7 +7,7 @@ publish = false
 [features]
 # Signed image (the runner needs PICOCELL_SIGNING_KEY) with a rollback version; see
 # sketch.md section 8.1.
-production = []
+production = ["settings/production"]
 
 [package.metadata.picocell]
 # Anti-rollback version of production images (OTP thermometer, raised when an image

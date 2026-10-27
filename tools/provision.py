@@ -9,6 +9,11 @@ certificate this way, secrets can stay in their own file. A value starting with 
 is taken literally, minus one "@" (a password starting with "@"). key=value arguments
 override CONFIG (their @paths are relative to the current directory).
 
+console.password is hashed here (PBKDF2-HMAC-SHA256, random salt), so only the hash
+goes to the gateway; a value that already is a hash (iterations$salt$hash) is sent as
+it is. If the console is locked, the tool logs in with the console password from
+$PICOCELL_CONSOLE_PASSWORD, else it asks for it.
+
 The edited config starts empty ("clear"), so keys not given keep their defaults.
 Then "show" is printed (secrets as ***) and "commit" stores the config, upon which
 the gateway restarts with it. With --no-commit the changes stay uncommitted on the
@@ -18,8 +23,11 @@ DEVICE defaults to the one picocell-gw console under /dev/serial/by-id/.
 """
 
 import argparse
+import getpass
 import glob
+import hashlib
 import os
+import re
 import select
 import sys
 import time
@@ -28,6 +36,9 @@ import tty
 PROMPT = b"picocell> "
 DEVICES = "/dev/serial/by-id/usb-picocell_picocell-gw_console_*-if00"
 CA_KEYS = ("tls.ca0", "tls.ca1")
+# As the firmware (fw/src/login.rs).
+ITERATIONS = 10000
+HASH = re.compile(r"\d{1,6}\$[0-9a-f]{32}\$[0-9a-f]{64}")
 
 
 def die(msg):
@@ -70,7 +81,23 @@ def load(path, overrides):
     for key in CA_KEYS:
         if key in items and "-----BEGIN CERTIFICATE-----" not in items[key]:
             die(f"{key}: a PEM certificate file (@path) expected")
+    pw = items.get("console.password")
+    if pw is not None and not HASH.fullmatch(pw):
+        if not re.fullmatch(r"[!-~]{1,64}", pw):
+            die("console.password: 1 to 64 printable characters expected, no blanks")
+        items["console.password"] = password_hash(pw)
     return items
+
+
+def password_hash(password):
+    """The stored form of a console password: iterations$salt$hash."""
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, ITERATIONS)
+    return f"{ITERATIONS}${salt.hex()}${dk.hex()}"
+
+
+def console_password():
+    return os.environ.get("PICOCELL_CONSOLE_PASSWORD") or getpass.getpass("console password: ")
 
 
 class Console:
@@ -107,6 +134,17 @@ class Console:
             if not text.startswith(PROMPT.decode()):
                 lines.append(text)
 
+    def greet(self):
+        """Reads what opening the port brings, up to the prompt; returns whether the
+        console is locked."""
+        self.read_until(b'"help" for commands', 5)
+        return b"console locked" in self.read_until(PROMPT, 2)
+
+    def login(self, password):
+        """Returns the error message, or None. A wrong password delays the answer
+        (up to 60 s)."""
+        return self.run("login", [password], timeout=90)[1]
+
 
 def main():
     p = argparse.ArgumentParser(description="Provision a picocell-gw over its USB console.")
@@ -126,8 +164,10 @@ def main():
 
     c = Console(device)
     # Opening the port replays the log history, then the banner and the prompt.
-    c.read_until(b'"help" for commands', 5)
-    c.read_until(PROMPT, 2)
+    if c.greet():
+        err = c.login(console_password())
+        if err is not None:
+            die(f"login: {err}")
 
     def run(line, more=(), shown=None):
         out, err = c.run(line, more)

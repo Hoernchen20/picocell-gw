@@ -655,6 +655,19 @@ Keep a DNP footprint on the PCB.
 - If the OTP key or config is lost/corrupt, device boots into provisioning mode;
   re-provision via USB console. Build and test this path from day one.
 
+### 5.5 Console login
+
+- Implemented (`fw/src/login.rs`): `console.password` in the encrypted config as
+  PBKDF2-HMAC-SHA256 (10000 iterations, 0.5 s on the RP2350; random salt), required in
+  production builds. While stored, the console allows only `help`, `status`, `log`,
+  `login`, `logout` and `erase` before `login`; logout on port close, `logout` and
+  10 minutes idle. Wrong passwords wait 3 s doubling to 60 s (counter in RAM).
+- Forgotten password: `erase` without login. It deletes the MQTT password with the
+  rest, so it gives nothing away; it only takes the gateway offline, which physical
+  access allows anyway.
+- `tools/provision.py` hashes the password on the host and logs in on a locked
+  console; `tools/hil-test.py` provisions a test password and checks the lock.
+
 ---
 
 ## 6. Time
@@ -722,6 +735,7 @@ Keep a DNP footprint on the PCB.
 | `mqtt.host` / `mqtt.port` | `mqtt.example.org` / 8883 | Hostname, used for SNI + cert check (see 3.4) |
 | `mqtt.topic_prefix` | `eu868` | |
 | `mqtt.username` / `mqtt.password` | gateway ID / random | Encrypted |
+| `console.password` | PBKDF2 hash | Console login, see 5.5 |
 | `tls.ca[0..1]` | DER | Current + next CA |
 | `ntp.servers` | 3 entries | IP or hostname (resolved via hosts table / DNS) |
 | `radio.region` / channel plan | EU868 8+1+1 | Radio centre freqs, IF offsets |
@@ -991,13 +1005,7 @@ Milestones:
   +22 KB RAM.
 - Dev vs. production flow: decided, see 8.1 (dev build unsigned, no OTP key, no OTP
   writes, SWD untouched; both current boards stay dev boards).
-- Console access protection: the console has full access in both builds, so anyone
-  with USB access can read the log and change the config (e.g. point `mqtt.host` and
-  `tls.ca0` at their own broker and receive the password). To do: password-protected
-  console login, e.g. a console password hash in the encrypted config, required
-  before config commands (or all commands except `status`/`help`), with a lockout
-  delay after wrong attempts; settle how a forgotten password is recovered
-  (`erase` without login?).
+- Console access protection: done, see 5.5.
 - LED blink patterns for the states listed in 2.4.
 - Stats interval and contents; whether to support `command/config`.
 - Watchdog: settled in 8b (8 s, fed every second by its own task, so it catches a
