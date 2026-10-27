@@ -129,10 +129,16 @@ key is refused.
 ## Configuration and provisioning
 
 The config lives in the last 64 KB of flash (behind both image slots, so flashing
-keeps it), encrypted with AES-128-GCM. For now the key is derived from the chip ID, which only
-keeps the secrets out of a plain flash dump; step 8 moves to a random key in OTP, and
-boards then need provisioning again. Without a complete config the gateway stays
-offline in provisioning mode and says so on the console.
+keeps it), encrypted with AES-128-GCM. Dev builds derive the key from the chip ID, which only
+keeps the secrets out of a plain flash dump. Production builds derive it from 16
+random bytes in OTP page 20, which `otp-key init` writes once (only with secure boot
+on, after typing `yes`; it cannot be undone) and locks for good: secure read-only, no
+non-secure or bootloader access. There is no migration: a board switching to a
+production build is provisioned again. Both builds read the page at boot and then
+soft-lock it until the next reset; `otp-key` and the `config key` line in `status`
+show the key source, the page state and the lock. Without a key (production, page
+empty or damaged) or without a complete config the gateway stays offline in
+provisioning mode and says so on the console.
 
 | Key | Default | |
 |---|---|---|

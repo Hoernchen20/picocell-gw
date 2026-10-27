@@ -41,7 +41,7 @@ use rust_mqtt::types::{MqttBinary, MqttString, ReasonCode, TopicFilter, TopicNam
 use wire::time::Utc;
 
 use crate::tls::{FailClosed, Suite};
-use crate::{boot, clock, config, downlink, ota, resolve};
+use crate::{boot, clock, config, config_key, downlink, ota, resolve};
 
 const KEEP_ALIVE_S: u16 = 30;
 const MAX_PACKET: u32 = 8192;
@@ -464,6 +464,7 @@ fn stats(gateway_id: &str, buf: &mut [u8]) -> usize {
         ("secure_boot", sec.secure_boot()),
         ("debug", sec.debug()),
         ("boot_keys", boot_keys.as_str()),
+        ("config_key", config_key::source()),
     ];
     // The session only runs once the clock is set.
     let time_us = clock::now_unix_us().unwrap_or(0);

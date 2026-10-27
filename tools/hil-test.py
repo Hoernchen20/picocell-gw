@@ -10,7 +10,8 @@ Needs the board on USB and Ethernet, and the test broker running on this machine
 1. --flash: builds fw/ (release), sends "bootsel", waits for the RP2350 drive (desktop
    automount) and copies the UF2 to it.
 2. Console: banner, "help", errors for an unknown command and key, "status" fields
-   (the boot line, i.e. slot and boot type, is logged).
+   (the boot line, i.e. slot and boot type, is logged), the config key's OTP page read
+   at boot and soft-locked since, "otp-key init" refused in a dev build.
 3. Provisions tools/test-broker/gateway.conf with net.hosts pointing at this machine
    (--broker-ip, default: the address of the default route) and registers the gateway
    with the broker. With --no-provision the stored config is kept and the board is
@@ -296,12 +297,19 @@ def main():
         run_error(c, "set no.such.key 1")
         run_error(c, "ca 2")
         s = status(c)
-        for key in ("firmware", "boot", "security", "gateway id", "config", "mac", "ip", "time", "uptime", "mqtt"):
+        for key in ("firmware", "boot", "security", "config key", "gateway id", "config", "mac", "ip", "time",
+                    "uptime", "mqtt"):
             if key not in s:
                 fail(f"status has no {key} line")
         if not re.fullmatch(r"[0-9a-f]{16}", s["gateway id"]):
             fail(f"gateway id {s['gateway id']!r}")
         state["id"] = s["gateway id"]
+        key = s.get("config key", "")
+        if "dev build" in s["security"] and not re.fullmatch(r"chip ID \(dev build\); OTP page \d+ empty, soft-locked", key):
+            fail(f"config key {key!r}")
+        err = run_error(c, "otp-key init")
+        if "dev build" in s["security"] and "dev build" not in err:
+            fail(f"otp-key init: {err}")
         log(f"firmware {s['firmware']}, gateway {s['gateway id']}, config {s['config']}")
         log(f"boot {s['boot']}")
 
@@ -353,7 +361,7 @@ def main():
         text = pb_decode("GatewayStats", mqtt_sub(topic("event/stats"), wait=35))
         if state["id"] not in text:
             fail("GatewayStats without the gateway id")
-        if 'key: "secure_boot"' not in text:
+        if 'key: "secure_boot"' not in text or 'key: "config_key"' not in text:
             fail("GatewayStats without the security metadata")
 
     def uplink():

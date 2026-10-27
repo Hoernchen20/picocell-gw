@@ -884,6 +884,25 @@ Milestones:
     page locks (no bootloader/non-secure access, so `picotool` in BOOTSEL cannot
     read it; secure read-only). Lock board only.
   - No migration: boards are provisioned again (as the fw README says).
+  - Status (2026-10-27): implemented; read and soft lock tested on a dev board
+    (`tools/hil-test.py --flash` 16/16), `otp-key init` waits for the lock board.
+    `fw/src/config_key.rs`: OTP page 20 (rows 0x500–0x53f; page 30 is picotool's
+    default for encrypted boot), key in ECC rows 0–7, then a 32-bit check (SHA-256 of
+    the key, first 4 bytes) in rows 8–9, written last, so an interrupted write reads
+    as damaged. Production config key = HMAC-SHA-256(OTP key, "picocell-gw config
+    key")[..16], so further keys can be derived later; dev key unchanged (stored dev
+    configs stay readable). At boot the page is read raw (all zero → empty) and with
+    ECC, then `SW_LOCK` NSEC and SEC inaccessible; a production build with an empty
+    page keeps SEC readable for `otp-key init`. `otp-key init` (production, secure
+    boot on, page and its LOCK1 row zero, typed `yes`): TRNG key, ECC writes, read
+    back, LOCK1 = 0x3d3d3d (LOCK_S read-only, LOCK_NS and LOCK_BL inaccessible), soft
+    lock, restart. Without a key the store is not opened (`commit` says so).
+    `status` line `config key`, console `otp-key`, `GatewayStats` metadata
+    `config_key` (`dev`/`otp`/`none`). Dev builds compile the write path out
+    (`otp-key init` → error). +1 KB text.
+  - Lock board tests: `otp-key init` refused with secure boot off; with it on, key
+    written, `picotool otp get` of rows 0x500… refused in BOOTSEL, config stored and
+    loaded after reboot, a second `init` refused.
 - **8e. CA rotation** (dev boards)
   - Signed `command/ca`: ECDSA P-256 with its own config-signing key (separate
     from the boot key; the firmware already has P-256 verify via `embassy-crypto`).
@@ -938,7 +957,7 @@ Milestones:
   slots as DER, ≤ 1 KB each), tag; read back after writing. Every value is checked
   on `set` and on load; an unknown key or format makes the stored config unusable
   (provisioning mode) rather than silently dropped. Dev key = HMAC-SHA-256 of the
-  chip ID, until the OTP key (step 8). Keys default as in section 7 (`net.mode`
+  chip ID, production key from OTP (8.1, 8d). Keys default as in section 7 (`net.mode`
   static); `mqtt.username` is fixed to the gateway ID. Not yet: `net.mac`, radio
   keys, `location`. The build-time `PICOCELL_*` settings are gone. +27 KB text,
   +22 KB RAM.

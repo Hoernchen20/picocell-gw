@@ -3,10 +3,10 @@
 //! one holding the settings and, during a remote password change (sketch.md section
 //! 5.2), one holding the new password next to them until the broker has accepted it.
 //!
-//! The key is a development key derived from the chip ID, which anyone holding the
-//! board can read (it is also the gateway ID), so for now this only keeps the secrets
-//! out of a plain flash dump. Step 8 replaces it with a random key in OTP (sketch.md
-//! section 4.2); configs stored before then have to be provisioned again.
+//! The key comes from `config_key`: in dev builds derived from the chip ID, which
+//! anyone holding the board can read (it is also the gateway ID), so that only keeps
+//! the secrets out of a plain flash dump; in production builds from a random key in
+//! OTP (sketch.md section 4.2). Without a key nothing can be stored.
 //!
 //! The partition lies behind the two 988 KB slots, so flashing firmware keeps it. All
 //! access goes through ROM `flash_op` (`crate::flash`): with the A/B partition table XIP
@@ -16,7 +16,7 @@ use core::cell::RefCell;
 use core::ops::Range;
 use core::str::FromStr;
 
-use embassy_crypto::{Aes128Gcm, HmacSha256};
+use embassy_crypto::Aes128Gcm;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::blocking_mutex::Mutex as BlockingMutex;
 use embassy_sync::mutex::Mutex;
@@ -31,7 +31,7 @@ use static_cell::StaticCell;
 pub use settings::{Net, Settings, check_password};
 
 use crate::flash::Partition;
-use crate::tls;
+use crate::{config_key, tls};
 
 /// Unix time of the build; SNTP results before it are rejected.
 const BUILD_TIME: &str = env!("PICOCELL_BUILD_TIME");
@@ -155,11 +155,17 @@ impl Store {
     }
 }
 
+/// The store is only opened with a config key.
+const NO_STORE: &str = "no config key, see \"otp-key\"";
+
 /// Opens the config partition and loads the settings; runs before anything calls
 /// `get()`. Without a complete config the gateway stays in provisioning mode.
 pub async fn init() {
-    let chip_id = embassy_rp::otp::get_chipid().unwrap_or(0);
-    let key = HmacSha256::mac(b"picocell-gw dev config key", &chip_id.to_be_bytes());
+    let Some(key) = config_key::load() else {
+        warn!("provisioning mode: no config key in OTP, see \"otp-key\" on the USB console");
+        let _ = ACTIVE.init(Settings::new());
+        return;
+    };
     static CELL: StaticCell<Store> = StaticCell::new();
     let store = CELL.init(Store {
         map: MapStorage::new(
@@ -167,7 +173,7 @@ pub async fn init() {
             const { MapConfig::new(0..PARTITION.end - PARTITION.start) },
             Cache::new_uncached(),
         ),
-        aes: Aes128Gcm::new(key[..16].try_into().unwrap()),
+        aes: Aes128Gcm::new(&key),
         record: [0; RECORD_MAX],
         plain: [0; ENCODED_MAX],
         scratch: [0; RECORD_MAX + 8],
@@ -212,7 +218,7 @@ pub fn provisioned() -> bool {
 /// Stores `s`; takes effect after a restart. Supersedes a staged password.
 pub async fn save(s: &Settings) -> Result<(), &'static str> {
     let mut store = STORE.lock().await;
-    let store = store.as_mut().ok_or("no flash")?;
+    let store = store.as_mut().ok_or(NO_STORE)?;
     store.save_settings(s).await?;
     store.drop_password().await
 }
@@ -226,7 +232,7 @@ pub fn staged_password() -> Option<Password> {
 pub async fn stage_password(pw: &str) -> Result<(), &'static str> {
     check_password(pw)?;
     let mut store = STORE.lock().await;
-    let store = store.as_mut().ok_or("no flash")?;
+    let store = store.as_mut().ok_or(NO_STORE)?;
     store.plain[..pw.len()].copy_from_slice(pw.as_bytes());
     store.store(NEW_PASSWORD, pw.len()).await?;
     match store.load_password().await? {
@@ -244,17 +250,17 @@ pub async fn commit_password() -> Result<(), &'static str> {
     let mut s = get().clone();
     s.set("mqtt.password", &pw)?;
     let mut store = STORE.lock().await;
-    let store = store.as_mut().ok_or("no flash")?;
+    let store = store.as_mut().ok_or(NO_STORE)?;
     store.save_settings(&s).await?;
     store.drop_password().await
 }
 
 /// The broker refused the staged password: drops it, the stored one stays.
 pub async fn drop_password() -> Result<(), &'static str> {
-    STORE.lock().await.as_mut().ok_or("no flash")?.drop_password().await
+    STORE.lock().await.as_mut().ok_or(NO_STORE)?.drop_password().await
 }
 
 /// Erases the config partition.
 pub async fn erase() -> Result<(), &'static str> {
-    STORE.lock().await.as_mut().ok_or("no flash")?.map.erase_all().await.map_err(storage_error)
+    STORE.lock().await.as_mut().ok_or(NO_STORE)?.map.erase_all().await.map_err(storage_error)
 }

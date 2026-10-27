@@ -13,6 +13,7 @@
 mod boot;
 mod clock;
 mod config;
+mod config_key;
 mod console;
 mod downlink;
 mod flash;

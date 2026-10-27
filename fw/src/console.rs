@@ -38,7 +38,7 @@ use wire::time::Utc;
 
 use crate::config::Settings;
 use crate::ids::Ids;
-use crate::{boot, clock, config, downlink, mqtt};
+use crate::{boot, clock, config, config_key, downlink, mqtt};
 
 type Usb = Driver<'static, USB>;
 
@@ -285,6 +285,8 @@ enum Input {
     Secret(&'static str),
     /// A line of a PEM certificate for this CA slot.
     Pem(usize, Pem),
+    /// "yes" to write the config key into OTP.
+    ConfirmOtpKey,
 }
 
 fn prompt(input: &Input) -> &'static str {
@@ -292,6 +294,7 @@ fn prompt(input: &Input) -> &'static str {
         Input::Command => PROMPT,
         Input::Secret(_) => "value: ",
         Input::Pem(..) => "",
+        Input::ConfirmOtpKey => "write the key? ",
     }
 }
 
@@ -362,6 +365,17 @@ async fn session(
                                     reply(o, pending.set(key, line)).await?;
                                     Input::Command
                                 }
+                                Input::ConfirmOtpKey if line.trim() == "yes" => match config_key::init_otp() {
+                                    Ok(()) => restart(o, false).await,
+                                    Err(e) => {
+                                        reply(o, Err(e)).await?;
+                                        Input::Command
+                                    }
+                                },
+                                Input::ConfirmOtpKey => {
+                                    reply(o, Err("cancelled")).await?;
+                                    Input::Command
+                                }
                                 Input::Pem(slot, mut pem) => match pem.line(line) {
                                     Ok(false) => Input::Pem(slot, pem),
                                     Ok(true) => {
@@ -409,6 +423,8 @@ clear                start from an empty config\r\n\
 discard              drop the changes since the last commit\r\n\
 commit               save the config and restart with it\r\n\
 erase                delete the stored config and restart (provisioning mode)\r\n\
+otp-key              state of the config key and its OTP page\r\n\
+otp-key init         production only: write a random config key into OTP and restart\r\n\
 reboot               restart\r\n\
 bootsel              restart into the USB bootloader (RP2350 drive) for flashing\r\n";
 
@@ -525,11 +541,24 @@ async fn command(
             Ok(()) => restart(o, false).await,
             Err(e) => Err(e),
         },
+        ("otp-key", None, _) => {
+            out!(o, "{}\r\n", config_key::Status)?;
+            Ok(())
+        }
+        ("otp-key", Some("init"), None) => match config_key::can_init() {
+            Ok(()) => {
+                out!(o, "writes a random key into OTP page {}, then locks the page for good; cannot be undone\r\n", config_key::PAGE)?;
+                o.write(b"type \"yes\" to write it, anything else cancels\r\n").await?;
+                return Ok(Input::ConfirmOtpKey);
+            }
+            Err(e) => Err(e),
+        },
+        ("otp-key", Some(_), None) => Err("\"init\" or nothing expected"),
         ("reboot", None, _) => restart(o, false).await,
         ("bootsel", None, _) => restart(o, true).await,
         (
-            "help" | "status" | "log" | "show" | "unset" | "clear" | "discard" | "commit" | "erase" | "reboot"
-            | "bootsel",
+            "help" | "status" | "log" | "show" | "unset" | "clear" | "discard" | "commit" | "erase" | "otp-key"
+            | "reboot" | "bootsel",
             _,
             _,
         ) => Err("too many arguments"),
@@ -585,6 +614,7 @@ async fn status(o: &mut Out<'_>, ctx: &Context, pending: &Settings) -> Result<()
         None => o.write(b"boot       unknown\r\n").await?,
     }
     out!(o, "security   {}\r\n", boot::security())?;
+    out!(o, "config key {}\r\n", config_key::Status)?;
     if boot::trial() {
         let left = boot::BUY_DEADLINE_S.saturating_sub(up);
         out!(o, "trial      OTA image not bought yet: needs the broker within {left} s, else the old image boots\r\n")?;
