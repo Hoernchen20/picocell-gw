@@ -15,6 +15,10 @@
 //! Firmware update (sketch.md section 8.1, 8b): messages on `command/ota` go to
 //! `ota::Receiver`, answers to `state/ota`. An OTA trial image is bought once the
 //! subscriptions are up, so it can take the next update.
+//!
+//! CA rotation (sketch.md section 8.1, 8e): signed updates on `command/ca` go to
+//! `ca_update`, answers to `state/ca`. A session that only came up with `tls.ca1`
+//! makes it `tls.ca0` and restarts.
 
 use core::fmt::Write;
 use core::num::NonZero;
@@ -41,7 +45,7 @@ use rust_mqtt::types::{MqttBinary, MqttString, ReasonCode, TopicFilter, TopicNam
 use wire::time::Utc;
 
 use crate::tls::{FailClosed, Suite};
-use crate::{boot, clock, config, config_key, downlink, ota, resolve};
+use crate::{boot, ca_update, clock, config, config_key, downlink, ota, resolve};
 
 const KEEP_ALIVE_S: u16 = 30;
 const MAX_PACKET: u32 = 8192;
@@ -197,6 +201,8 @@ enum Incoming {
     Password(Result<config::Password, &'static str>),
     /// The answer for `state/ota`, and whether to reboot into the new image after it.
     Ota(ota::Reply, bool),
+    /// The answer for `state/ca`, and whether to restart after it.
+    Ca(ca_update::Reply, bool),
 }
 
 /// One connection, with the staged password `new` or else the stored one. `Ok` once
@@ -229,6 +235,8 @@ async fn session(
     let report_topic = topic(gateway_id, "state/credentials");
     let ota_topic = topic(gateway_id, "command/ota");
     let ota_report_topic = topic(gateway_id, "state/ota");
+    let ca_topic = topic(gateway_id, "command/ca");
+    let ca_report_topic = topic(gateway_id, "state/ca");
 
     let mut socket = TcpSocket::new(stack, &mut bufs.tcp_rx, &mut bufs.tcp_tx);
     // Also bounds poll_body(): never wrap MQTT reads in a timeout (not cancel-safe).
@@ -243,7 +251,8 @@ async fn session(
         .map_err(|_| TLS_FAILED)?;
 
     let mut bump = BumpBuffer::new(&mut bufs.mqtt);
-    let mut client: Client<'_, '_, _, _, 3, 4, 4, 0, 0, 0, 0> = Client::new(&mut bump);
+    // The first 4: SUBSCRIBEs awaiting their SUBACK, one per subscription below.
+    let mut client: Client<'_, '_, _, _, 4, 4, 4, 0, 0, 0, 0> = Client::new(&mut bump);
     let mut offline = [0u8; 64];
     let n = chirpstack::conn_state(gateway_id, false, &mut offline).map_err(|_| "gateway id too long")?;
     let will = WillOptions::new(name(&state_topic), MqttBinary::try_from(&offline[..n]).unwrap())
@@ -339,11 +348,35 @@ async fn session(
                 &SubscriptionOptions::new().at_least_once().retain_as_published(),
             )
             .await
+            .is_ok()
+        // Signed, so a retained update is fine: it reaches gateways that were offline.
+        && client
+            .subscribe(
+                TopicFilter::new(MqttString::from_str(ca_topic.as_str()).unwrap()).unwrap(),
+                &SubscriptionOptions::new().at_least_once(),
+            )
+            .await
             .is_ok();
     if !ok {
         return Err("publish/subscribe failed");
     }
     boot::confirm();
+
+    let ca_options = PublicationOptions::new(TopicReference::Name(name(&ca_report_topic)));
+    // Only tried after a failed handshake with tls.ca0: the broker has moved to the
+    // new CA, so the old one goes.
+    if ca_slot == 1 {
+        match config::promote_ca().await {
+            Ok(()) => {
+                info!("mqtt: broker only reachable with tls.ca1, now tls.ca0; restarting");
+                let msg = b"promoted: tls.ca1 is now tls.ca0, restarting";
+                let _ = client.publish(&ca_options, msg[..].into()).await;
+                Timer::after_millis(200).await;
+                cortex_m::peripheral::SCB::sys_reset();
+            }
+            Err(e) => warn!("mqtt: promoting tls.ca1: {e}"),
+        }
+    }
 
     let stats_options = PublicationOptions::new(TopicReference::Name(name(&stats_topic)));
     let ack_options = PublicationOptions::new(TopicReference::Name(name(&ack_topic)));
@@ -370,6 +403,10 @@ async fn session(
                         Some(t) if t == ota_topic.as_str() => {
                             let (reply, reboot) = ota.handle(p.retain, p.message.as_ref()).await;
                             Incoming::Ota(reply, reboot)
+                        }
+                        Some(t) if t == ca_topic.as_str() => {
+                            let (reply, restart) = ca_update::handle(p.message.as_ref()).await;
+                            Incoming::Ca(reply, restart)
                         }
                         _ => match downlink::handle(gateway_id, p.message.as_ref(), &mut buf) {
                             Some(n) => Incoming::Ack(n),
@@ -410,6 +447,14 @@ async fn session(
                         if reboot {
                             Timer::after_millis(200).await;
                             ota.reboot();
+                        }
+                        r
+                    }
+                    Incoming::Ca(reply, restart) => {
+                        let r = client.publish(&ca_options, reply.as_bytes().into()).await.map(|_| ());
+                        if restart {
+                            Timer::after_millis(200).await;
+                            cortex_m::peripheral::SCB::sys_reset();
                         }
                         r
                     }

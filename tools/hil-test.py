@@ -2,7 +2,7 @@
 """Hardware-in-the-loop test of a picocell-gw dev board over its USB console only.
 
     tools/hil-test.py [-d DEVICE] [--flash] [--no-provision] [--broker-ip IP] [--ota]
-                      [--ota-fallback] [--erase]
+                      [--ota-fallback] [--ca] [--erase]
 
 Needs the board on USB and Ethernet, and the test broker running on this machine
 (tools/test-broker/setup.sh, then mosquitto -c tools/test-broker/out/mosquitto.conf).
@@ -26,7 +26,11 @@ Needs the board on USB and Ethernet, and the test broker running on this machine
 7. --ota-fallback (about 7 minutes): updates whose trial cannot reach the broker (the
    gateway's password on the test broker is changed meanwhile and restored after):
    a reboot during the trial, and the 5-minute buy deadline. Both boot the old slot.
-8. --erase: deletes the config at the end (provisioning mode).
+8. --ca: CA rotation with tools/ca-push.py and tools/test-broker/rotate-ca.sh: an
+   update signed with the wrong key, a replayed and an older one refused; the second
+   CA into tls.ca1, broker switched, the gateway promotes it to tls.ca0 on its own;
+   then the same back to the first CA, so the broker and the gateway end as before.
+9. --erase: deletes the config at the end (provisioning mode).
 
 Exits with the number of failed checks. Without a debug probe the board has to run a
 firmware with a working console: if it hangs, hold BOOTSEL while plugging in USB and
@@ -36,10 +40,12 @@ flash by hand.
 import argparse
 import glob
 import getpass
+import hashlib
 import os
 import re
 import shutil
 import socket
+import ssl
 import subprocess
 import sys
 import time
@@ -55,6 +61,7 @@ ELF = os.path.join(ROOT, "fw/target/thumbv8m.main-none-eabihf/release/picocell-g
 BROKER = os.path.join(TOOLS, "test-broker")
 PASSWD = os.path.join(BROKER, "out/passwd")
 CA = os.path.join(BROKER, "out/ca.pem")
+NEXT_CA = os.path.join(BROKER, "out/next/ca.pem")
 
 
 class Failed(Exception):
@@ -230,6 +237,7 @@ def main():
     p.add_argument("--broker-ip", help="address of this machine as seen by the board")
     p.add_argument("--ota", action="store_true", help="firmware update over MQTT")
     p.add_argument("--ota-fallback", action="store_true", help="trial images that never reach the broker")
+    p.add_argument("--ca", action="store_true", help="CA rotation (switches the test broker and back)")
     p.add_argument("--erase", action="store_true", help="delete the config at the end")
     a = p.parse_args()
 
@@ -514,6 +522,78 @@ def main():
             connected()
         return fn
 
+    def show_ca(slot):
+        for line in run(state["c"], "show"):
+            if line.startswith(f"tls.ca{slot} "):
+                return line[19:].strip()
+        fail(f"show has no tls.ca{slot} line")
+
+    def ca_info(pem):
+        der = ssl.PEM_cert_to_DER_cert(open(pem).read())
+        return f"{len(der)} bytes, sha256 {hashlib.sha256(der).hexdigest()}"
+
+    def ca_push(*args, want_rc=0, want=None):
+        r = subprocess.run([sys.executable, os.path.join(TOOLS, "ca-push.py"), state["id"], *args],
+                           capture_output=True, text=True, timeout=60)
+        out = (r.stdout + r.stderr).strip()
+        last = out.splitlines()[-1] if out else ""
+        log(last)
+        if r.returncode != want_rc or (want and want not in out):
+            fail(f"ca-push.py {' '.join(args)}: exit {r.returncode}, {want!r} expected: {last}")
+
+    def ca_refused():
+        script(os.path.join("test-broker", "rotate-ca.sh"), "issue")
+        up = uptime()
+        ca_push(NEXT_CA, "--key", os.path.join(ROOT, "fw/keys/test-signing.pem"), want_rc=1,
+                want="rejected: bad signature")
+        if uptime() < up or show_ca(1) != "-":
+            fail("gateway restarted or tls.ca1 changed")
+
+    def ca_update():
+        saved = os.path.join(BROKER, "out/next/update.bin")
+        ca_push(NEXT_CA, "--save", saved, want="stored")
+        reopen()
+        if show_ca(1) != ca_info(NEXT_CA):
+            fail(f"tls.ca1 {show_ca(1)}, {ca_info(NEXT_CA)} expected")
+        connected()
+        seq = int(status(state["c"])["ca update"].split()[0])
+        up = uptime()
+        ca_push("--message", saved, want=f"current {seq}")
+        ca_push("--clear", "--seq", str(seq - 1), want_rc=1, want="rejected: older")
+        if uptime() < up:
+            fail("gateway restarted")
+
+    def promoted(new_ca0):
+        """Switches the broker and reboots the gateway: it fails with tls.ca0, connects
+        with tls.ca1, promotes it and restarts."""
+        script(os.path.join("test-broker", "rotate-ca.sh"), "switch")
+        state["switched"] = not state.get("switched", False)
+        reboot()
+        end = time.monotonic() + 90
+        while True:
+            try:
+                status(state["c"])
+            except (Failed, OSError):
+                reopen()
+                break
+            if time.monotonic() > end:
+                fail("no restart within 90 s (tls.ca1 not promoted?)")
+            time.sleep(2)
+        connected()
+        if show_ca(0) != new_ca0 or show_ca(1) != "-":
+            fail(f"tls.ca0 {show_ca(0)}, tls.ca1 {show_ca(1)}; {new_ca0} and - expected")
+
+    def ca_rotation():
+        promoted(ca_info(NEXT_CA))
+
+    def ca_back():
+        # out/next/ now holds the first CA.
+        first = ca_info(NEXT_CA)
+        ca_push(NEXT_CA, want="stored")
+        reopen()
+        connected()
+        promoted(first)
+
     def erase():
         state["c"] = restart(state["c"], state["device"], "erase")
         if not status(state["c"])["config"].startswith("provisioning mode"):
@@ -548,6 +628,14 @@ def main():
     if a.ota_fallback:
         check("OTA trial, reboot before the buy", ota_fallback(False))
         check("OTA trial, buy deadline", ota_fallback(True))
+    if a.ca:
+        check("CA update, wrong key", ca_refused)
+        check("CA update, replayed and older", ca_update)
+        check("CA rotation", ca_rotation)
+        check("CA rotation back", ca_back)
+        if state.get("switched"):
+            subprocess.run([os.path.join(BROKER, "rotate-ca.sh"), "switch"], check=False)
+            print("broker switched back to the first CA; re-provision the gateway if it cannot connect")
     if a.erase:
         check("erase", erase)
     if state["c"] is not None:

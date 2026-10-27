@@ -11,6 +11,7 @@
 #![no_main]
 
 mod boot;
+mod ca_update;
 mod clock;
 mod config;
 mod config_key;

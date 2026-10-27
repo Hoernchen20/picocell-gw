@@ -115,8 +115,9 @@ only for boards whose OTP holds its hash (a lock board, sketch.md section 8.1), 
 for real gateways. The production key is separate and stays offline. `verify-image.py`
 prints the boot key hash that goes into OTP `BOOTKEY0`.
 
-`cargo run --release --features production` builds a production image: the runner
-refuses it without a key and adds the rollback version from `[package.metadata.picocell]`
+`cargo run --release --features production` builds a production image: the build
+needs `PICOCELL_CONFIG_PUBKEY` (the public config-signing key, see "CA rotation"
+below), the runner refuses it without a signing key and adds the rollback version from `[package.metadata.picocell]`
 in [Cargo.toml](Cargo.toml) (dev images have none, so buying one never touches the OTP
 rollback rows). `status` and the `GatewayStats` metadata show the build (`dev`/`prod`)
 and, read from OTP, secure boot, debug disable and the valid boot keys.
@@ -155,7 +156,7 @@ provisioning mode and says so on the console.
 | `tls.ca0`, `tls.ca1` | | broker CA (PEM via `ca 0` / `ca 1`); `tls.ca0` required |
 
 With `tls.ca1` set, a failed TLS handshake makes the next attempt use the other slot
-(CA rotation). [../tools/provision.py](../tools/provision.py) sends a config file over
+(CA rotation, below). [../tools/provision.py](../tools/provision.py) sends a config file over
 the console and commits it; for the test broker:
 
 ```sh
@@ -186,6 +187,44 @@ tools/test-broker/rotate-password.sh <gateway-id> <file with the new password>
 It sends the password from the file (no shell quoting involved), waits for `stored`,
 switches the broker's password file and waits for `committed`; otherwise it restores
 the old broker password. ChirpStack may log the unknown `state/credentials` messages.
+
+### CA rotation
+
+A new broker CA reaches the gateways before the broker switches to it, signed with
+the config-signing key (ECDSA P-256, separate from the boot key): on
+`<prefix>/gateway/<id>/command/ca` it goes into `tls.ca1`, and the gateway answers
+`stored <sequence number>, restarting` on `state/ca`. Every update carries a sequence
+number (by default the Unix time of signing) that has to be above the last one the
+gateway stored (`ca update` in `status`): the same one again is answered `current`, an
+older one `rejected`, so a recorded update cannot be replayed later. It survives
+`commit`, only `erase` resets it. The message is not bound to a gateway, so one
+signature serves all of them, and it may be retained for gateways that are offline.
+An empty certificate clears `tls.ca1`.
+
+Once the broker presents a certificate from the new CA, the handshake with `tls.ca0`
+fails, the next one uses `tls.ca1`, and when that session is up the gateway makes
+`tls.ca1` its `tls.ca0`, drops the old CA (`promoted: ...` on `state/ca`) and
+restarts.
+
+```sh
+tools/ca-push.py <gateway-id> new-ca.pem               # signs with the test key
+tools/ca-push.py <gateway-id> new-ca.pem --save update.bin
+tools/ca-push.py <other-gateway-id> --message update.bin
+tools/ca-push.py <gateway-id> --clear                  # clears tls.ca1
+```
+
+Dev builds trust [keys/test-config-signing.pem](keys/test-config-signing.pem) (a test
+key, committed on purpose). Other builds take the public key from
+`PICOCELL_CONFIG_PUBKEY` (PEM), which production builds require; `ca-push.py --key`
+signs with the matching private key. An image can also bring a CA:
+`PICOCELL_CA=<PEM or DER>` at build time puts it into `tls.ca1` at boot, once, when it is
+in neither slot and the build is newer than the last CA update (so an old image does
+not bring back a replaced CA).
+
+On the test broker, `tools/test-broker/rotate-ca.sh issue` creates a second CA and
+broker certificate in `out/next/`, and `rotate-ca.sh switch` swaps them with the ones
+in `out/` (again to switch back). Mosquitto keeps open connections on reload, so the
+gateway sees the new certificate on its next connection (`reboot`).
 
 ## Time
 
@@ -295,11 +334,14 @@ tools/hil-test.py --no-provision   # keeps the stored config, reboots instead
 tools/hil-test.py --erase          # deletes the config at the end
 tools/hil-test.py --ota            # OTA: refused images, update, kept after reboot
 tools/hil-test.py --ota-fallback   # trials that never reach the broker (about 7 minutes)
+tools/hil-test.py --ca             # CA rotation there and back (about 2 minutes)
 ```
 
 The OTA checks need the partition table. `--ota-fallback` changes the gateway's
 password on the test broker during the trial and restores it afterwards (also on
-failure).
+failure). `--ca` rejects an update signed with the wrong key, a replayed and an older
+one, then rotates to the CA in `out/next/` and back, so the broker ends as it began
+(after a failure it switches the broker back; re-provision the gateway then).
 
 Close other terminals on the console first: two programs reading the port each get
 part of the output (the test refuses to start then). `--broker-ip` overrides the

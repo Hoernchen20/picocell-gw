@@ -239,6 +239,15 @@ impl Settings {
         &self.ca[slot]
     }
 
+    /// CA rotation: `tls.ca1` replaces `tls.ca0` and is cleared.
+    pub fn promote_ca(&mut self) -> Result<(), &'static str> {
+        if self.ca[1].is_empty() {
+            return Err("tls.ca1 not set");
+        }
+        self.ca[0] = core::mem::take(&mut self.ca[1]);
+        Ok(())
+    }
+
     /// The first required key that is not set, if any.
     pub fn missing(&self) -> Option<&'static str> {
         if self.value("net.mode") == "static" && self.get("net.ipv4").is_none() {
@@ -511,6 +520,18 @@ mod tests {
         s.set("net.mode", "dhcp").unwrap();
         assert_eq!(s.missing(), Some("tls.ca0"));
         assert_eq!(Settings::new().missing(), Some("net.ipv4"));
+    }
+
+    #[test]
+    fn promote_ca() {
+        let mut s = provisioned();
+        assert_eq!(s.promote_ca(), Err("tls.ca1 not set"));
+        assert_eq!(s.ca(0), DER);
+        let mut other = Vec::<u8, CA_MAX>::from_slice(DER).unwrap();
+        other[DER.len() - 1] ^= 1;
+        s.set_ca(1, &other).unwrap();
+        s.promote_ca().unwrap();
+        assert_eq!((s.ca(0), s.ca(1)), (&other[..], &[][..]));
     }
 
     #[test]

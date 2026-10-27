@@ -646,7 +646,8 @@ Keep a DNP footprint on the PCB.
   switching the broker. Each slot holds one root that signs the broker
   certificate directly.
 - New CA only via signed firmware or signed config message, never accepted unsigned
-  over MQTT. Config messages are signed with a separate P-256 key, see 8.1 (8e).
+  over MQTT. Config messages are signed with a separate P-256 key, see 8.1 (8e,
+  implemented).
 - If the CA expired before rotation: USB recovery.
 
 ### 5.4 Recovery
@@ -912,6 +913,33 @@ Milestones:
   - New CAs can also come with a signed image.
   - Host tool to sign and send; test with `tools/test-broker`: issue a second CA,
     roll it out, switch the broker.
+  - Status (2026-10-27): done, tested on a dev board (`tools/hil-test.py --flash --ca`
+    20/20). `fw/src/ca_update.rs`: `command/ca` = sequence number (u64 LE, Unix time
+    of signing by convention), certificate (DER, empty clears `tls.ca1`), ECDSA P-256
+    `r || s` over SHA-256("picocell-gw ca update\0" || seq || cert). Not bound to a
+    gateway (one signature for the fleet) and retained messages allowed, since
+    signature and sequence number carry the protection: seq equal to the stored one →
+    `current`, lower → rejected, more than a day ahead of the clock → rejected (a
+    typo would block all later updates). Accepted: seq (own map item 3, survives
+    `commit`, reset only by `erase`; unreadable → updates refused) then settings with
+    `tls.ca1`, answer on `state/ca`, restart. A session that came up with `tls.ca1`
+    (only tried after a failed handshake with `tls.ca0`) makes it `tls.ca0`, clears
+    `tls.ca1` (old CA no longer trusted) and restarts. Public key from `build.rs`:
+    `PICOCELL_CONFIG_PUBKEY` (PEM), default `fw/keys/test-config-signing.pub.pem`,
+    required by production builds. `PICOCELL_CA` puts a CA into the image; installed
+    into `tls.ca1` at boot when in neither slot and the build time (its sequence
+    number) is above the stored one, so an old image cannot bring back a replaced CA
+    (tested by hand: installed with the build time, then cleared with `ca-push.py
+    --clear`). Host tool `tools/ca-push.py` (signs via openssl, `--save`/`--message`
+    for reuse, `--retain`), `tools/test-broker/rotate-ca.sh issue|switch`. `status`
+    line `ca update`. +7 KB text, +0.5 KB RAM.
+  - Findings: rust-mqtt's first const parameter counts SUBSCRIBEs awaiting their
+    SUBACK, not subscriptions; with a fourth subscription it had to go from 3 to 4
+    (otherwise "publish/subscribe failed" on every connection). Mosquitto reloads the
+    broker certificate on SIGHUP but keeps open connections, so the gateway sees the
+    new CA on its next connection. Keeping the init future small: a second
+    `Settings` copy (2 KB) across an await in `config::init` cost 9 KB in the main
+    task's static future.
 - **8f. Production lock procedure** (last, lock board or real production boards)
   - `tools/lock-board.py`, each step separately with a confirmation: check the
     board, boot key hash + secure boot, flash the signed image, `otp-key init`,

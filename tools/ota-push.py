@@ -122,9 +122,9 @@ class Mqtt:
                     sys.exit(f"subscription to {topic} refused")
                 return
 
-    def publish(self, topic, payload):
-        """QoS 1, not retained; the PUBACK is skipped when it arrives."""
-        self._send(0x32, self._str(topic.encode()) + struct.pack(">H", self._next_id()) + payload)
+    def publish(self, topic, payload, retain=False):
+        """QoS 1; the PUBACK is skipped when it arrives."""
+        self._send(0x32 | retain, self._str(topic.encode()) + struct.pack(">H", self._next_id()) + payload)
 
     def receive(self, timeout):
         """Payload of the next publish (QoS 0, as subscribed), or None on timeout."""

@@ -1,7 +1,9 @@
 //! Provisioned configuration (sketch.md section 7) in the config partition, flash
 //! offset 0x1F0000 (64 KB): `sequential-storage` map items encrypted with AES-128-GCM,
-//! one holding the settings and, during a remote password change (sketch.md section
-//! 5.2), one holding the new password next to them until the broker has accepted it.
+//! one holding the settings, one the sequence number of the last CA update (sketch.md
+//! section 8.1, 8e; kept by `commit`, so a re-provisioned board still refuses older
+//! updates) and, during a remote password change (sketch.md section 5.2), one holding
+//! the new password next to them until the broker has accepted it.
 //!
 //! The key comes from `config_key`: in dev builds derived from the chip ID, which
 //! anyone holding the board can read (it is also the gateway ID), so that only keeps
@@ -12,7 +14,7 @@
 //! access goes through ROM `flash_op` (`crate::flash`): with the A/B partition table XIP
 //! only maps the running slot.
 
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 use core::ops::Range;
 use core::str::FromStr;
 
@@ -31,7 +33,7 @@ use static_cell::StaticCell;
 pub use settings::{Net, Settings, check_password};
 
 use crate::flash::Partition;
-use crate::{config_key, tls};
+use crate::{ca_update, config_key, tls};
 
 /// Unix time of the build; SNTP results before it are rejected.
 const BUILD_TIME: &str = env!("PICOCELL_BUILD_TIME");
@@ -45,6 +47,7 @@ const PARTITION: Range<u32> = 0x1F_0000..0x20_0000;
 /// Map item keys.
 const SETTINGS: u8 = 1;
 const NEW_PASSWORD: u8 = 2;
+const CA_SEQ: u8 = 3;
 const NONCE: usize = 12;
 const TAG: usize = 16;
 /// The item: format byte, nonce, encrypted settings, tag.
@@ -55,6 +58,7 @@ const RECORD_FORMAT: u8 = 1;
 fn aad(item: u8) -> &'static [u8] {
     match item {
         SETTINGS => b"picocell-gw config",
+        CA_SEQ => b"picocell-gw ca sequence",
         _ => b"picocell-gw new password",
     }
 }
@@ -78,6 +82,7 @@ static STORE: Mutex<CriticalSectionRawMutex, Option<&'static mut Store>> = Mutex
 static ACTIVE: OnceLock<Settings> = OnceLock::new();
 static STAGED: BlockingMutex<CriticalSectionRawMutex, RefCell<Option<Password>>> =
     BlockingMutex::new(RefCell::new(None));
+static SEQ: BlockingMutex<CriticalSectionRawMutex, Cell<u64>> = BlockingMutex::new(Cell::new(0));
 
 fn storage_error<E>(e: sequential_storage::Error<E>) -> &'static str {
     match e {
@@ -149,6 +154,32 @@ impl Store {
         Ok(Some(Password::try_from(pw).unwrap()))
     }
 
+    /// 0 if no CA update was stored yet.
+    async fn load_seq(&mut self) -> Result<u64, &'static str> {
+        match self.load(CA_SEQ).await? {
+            Some(8) => Ok(u64::from_le_bytes(self.plain[..8].try_into().unwrap())),
+            Some(_) => Err("bad length"),
+            None => Ok(0),
+        }
+    }
+
+    async fn save_seq(&mut self, seq: u64) -> Result<(), &'static str> {
+        self.plain[..8].copy_from_slice(&seq.to_le_bytes());
+        self.store(CA_SEQ, 8).await?;
+        if self.load_seq().await? != seq {
+            return Err("read-back differs");
+        }
+        SEQ.lock(|s| s.set(seq));
+        Ok(())
+    }
+
+    /// The sequence number first: if the settings write fails after it, the update
+    /// is lost and has to be signed again, but an older one is still refused.
+    async fn save_ca(&mut self, seq: u64, s: &Settings) -> Result<(), &'static str> {
+        self.save_seq(seq).await?;
+        self.save_settings(s).await
+    }
+
     async fn drop_password(&mut self) -> Result<(), &'static str> {
         STAGED.lock(|s| s.take());
         self.map.remove_item(&mut self.scratch, &NEW_PASSWORD).await.map_err(storage_error)
@@ -178,17 +209,31 @@ pub async fn init() {
         plain: [0; ENCODED_MAX],
         scratch: [0; RECORD_MAX + 8],
     });
-    let settings = match store.load_settings().await {
-        Ok(Some(s)) => s,
+    match store.load_seq().await {
+        Ok(seq) => SEQ.lock(|s| s.set(seq)),
+        Err(e) => {
+            warn!("CA sequence number unusable ({e}): CA updates refused until \"erase\"");
+            SEQ.lock(|s| s.set(u64::MAX));
+        }
+    }
+    let (mut settings, stored) = match store.load_settings().await {
+        Ok(Some(s)) => (s, true),
         Ok(None) => {
             warn!("no config stored");
-            Settings::new()
+            (Settings::new(), false)
         }
         Err(e) => {
             warn!("stored config unusable: {e}");
-            Settings::new()
+            (Settings::new(), false)
         }
     };
+    if stored {
+        match install_image_ca(store, &mut settings).await {
+            Ok(true) => info!("CA certificate of this image stored in tls.ca1"),
+            Ok(false) => {}
+            Err(e) => warn!("storing the CA certificate of this image: {e}"),
+        }
+    }
     match settings.missing() {
         None => info!("config loaded"),
         Some(k) => warn!("provisioning mode: {k} not set; configure on the USB console, see \"help\""),
@@ -203,6 +248,22 @@ pub async fn init() {
     }
     let _ = ACTIVE.init(settings);
     *STORE.lock().await = Some(store);
+}
+
+/// A CA certificate built into the image (`PICOCELL_CA`) goes into `tls.ca1` once:
+/// when it is in neither slot and the image is newer than the last CA update (the
+/// build time is its sequence number), so an image cannot bring back a CA that a
+/// later update replaced. Changes `s` in place (no second copy in the main task's
+/// future): if storing fails, the CA is still used until the restart.
+async fn install_image_ca(store: &mut Store, s: &mut Settings) -> Result<bool, &'static str> {
+    let ca = ca_update::IMAGE_CA;
+    let seq = build_time();
+    if ca.is_empty() || s.ca(0) == ca || s.ca(1) == ca || seq <= ca_seq() {
+        return Ok(false);
+    }
+    s.set_ca(1, ca)?;
+    store.save_ca(seq, s).await?;
+    Ok(true)
 }
 
 /// The settings in use: the stored ones (possibly incomplete), or none.
@@ -258,6 +319,31 @@ pub async fn commit_password() -> Result<(), &'static str> {
 /// The broker refused the staged password: drops it, the stored one stays.
 pub async fn drop_password() -> Result<(), &'static str> {
     STORE.lock().await.as_mut().ok_or(NO_STORE)?.drop_password().await
+}
+
+/// Sequence number of the last CA update (`ca_update`), 0 if none.
+pub fn ca_seq() -> u64 {
+    SEQ.lock(|s| s.get())
+}
+
+/// Stores a signed CA update: `der` into `tls.ca1` (empty: clears it) with its
+/// sequence number. Takes effect after a restart.
+pub async fn store_ca(seq: u64, der: &[u8]) -> Result<(), &'static str> {
+    let mut s = get().clone();
+    if der.is_empty() {
+        s.unset(settings::CA_KEYS[1])?;
+    } else {
+        s.set_ca(1, der)?;
+    }
+    STORE.lock().await.as_mut().ok_or(NO_STORE)?.save_ca(seq, &s).await
+}
+
+/// The broker is only reachable with `tls.ca1`: it replaces `tls.ca0`, and `tls.ca1`
+/// is cleared, so the old CA is no longer trusted. Takes effect after a restart.
+pub async fn promote_ca() -> Result<(), &'static str> {
+    let mut s = get().clone();
+    s.promote_ca()?;
+    STORE.lock().await.as_mut().ok_or(NO_STORE)?.save_settings(&s).await
 }
 
 /// Erases the config partition.

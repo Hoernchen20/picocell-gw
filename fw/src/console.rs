@@ -631,6 +631,11 @@ async fn status(o: &mut Out<'_>, ctx: &Context, pending: &Settings) -> Result<()
         o.write(b", new mqtt.password staged").await?;
     }
     o.write(b"\r\n").await?;
+    match config::ca_seq() {
+        0 => o.write(b"ca update  none\r\n").await?,
+        u64::MAX => o.write(b"ca update  sequence number unusable, updates refused until \"erase\"\r\n").await?,
+        seq => out!(o, "ca update  {seq} ({})\r\n", Utc(seq))?,
+    }
     out!(o, "mac        {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\r\n", m[0], m[1], m[2], m[3], m[4], m[5])?;
     match ctx.stack.and_then(|s| s.config_v4()) {
         Some(c) => {
