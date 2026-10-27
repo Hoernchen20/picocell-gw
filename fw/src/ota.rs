@@ -136,7 +136,7 @@ impl Receiver {
         }
         // Chunks are whole sectors, so `offset` starts one.
         let end = offset + data.len() as u32;
-        if data.is_empty() || end > job.size || (data.len() != CHUNK && end != job.size) {
+        if data.is_empty() || data.len() > CHUNK || end > job.size || (data.len() != CHUNK && end != job.size) {
             return Err("chunk: 4096 bytes expected, fewer only for the last");
         }
         let mut slot = Partition::new(SLOTS[job.slot].clone());

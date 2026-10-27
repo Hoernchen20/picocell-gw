@@ -5,10 +5,10 @@ Rust/Embassy firmware for the W5500-EVB-Pico2 (RP2350). Design: [../sketch.md](.
 Current state: Ethernet (DHCP or static IPv4), hosts table + DNS, SNTP, TLS 1.3 +
 MQTT 5 to the broker with ChirpStack protobuf messages: retained `ConnState` with Last
 Will, `GatewayStats` every 30 s (RX counters zero, duty-cycle load per sub-band), a
-test `UplinkFrame` every 10 s (proprietary frame, made-up radio metadata), and
-`DownlinkFrame`s from `command/down` (Class A delay and Class C immediately timing)
-checked against the EU868 duty cycle, scheduled in the JIT queue and answered with a
-`DownlinkTxAck` on `event/ack`; log, commands and provisioning on the USB console,
+test `UplinkFrame` every 10 s in dev builds (proprietary frame, made-up radio
+metadata), and `DownlinkFrame`s from `command/down` (retained ones ignored; Class A
+delay and Class C immediately timing) checked against the EU868 duty cycle, scheduled
+in the JIT queue and answered with a `DownlinkTxAck` on `event/ack`; log, commands and provisioning on the USB console,
 config encrypted in flash. No radio yet: a downlink is logged on the console at its
 start time instead of sent, and the RP2350 timer stands in for the SX1302 counter.
 

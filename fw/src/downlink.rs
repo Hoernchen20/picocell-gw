@@ -131,7 +131,10 @@ fn schedule(id: u32, i: usize, item: &chirpstack::gw::DownlinkFrameItem) -> TxAc
         tx.payload.len(),
     );
     let Some(airtime) = airtime else {
-        warn!("downlink {id}/{i}: SF{} BW{} unsupported", tx.spreading_factor, tx.bandwidth);
+        warn!(
+            "downlink {id}/{i}: SF{} BW{} preamble {} unsupported",
+            tx.spreading_factor, tx.bandwidth, tx.preamble
+        );
         return TxAckStatus::InternalError;
     };
     let Ok(payload) = Vec::from_slice(tx.payload) else {

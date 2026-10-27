@@ -523,7 +523,7 @@ Topic prefix e.g. `eu868`, gateway ID = SX1302 EUI (hex).
 | publish | `eu868/gateway/<id>/event/stats` | `GatewayStats` (include config/cert metadata) |
 | publish | `eu868/gateway/<id>/event/ack` | `DownlinkTxAck` |
 | publish (retained) | `eu868/gateway/<id>/state/conn` | `ConnState` ONLINE; Last Will = OFFLINE |
-| subscribe | `eu868/gateway/<id>/command/down` | `DownlinkFrame` |
+| subscribe | `eu868/gateway/<id>/command/down` | `DownlinkFrame`; retained ones ignored |
 | subscribe | `eu868/gateway/<id>/command/config` | optional, gateway configuration |
 | subscribe | `eu868/gateway/<id>/command/credentials` | new password, raw text (5.2); not ChirpStack |
 | publish | `eu868/gateway/<id>/state/credentials` | `stored` / `committed` / `rejected: ...` (5.2) |

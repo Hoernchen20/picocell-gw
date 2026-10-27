@@ -329,7 +329,8 @@ async fn session(
         && client
             .subscribe(
                 TopicFilter::new(MqttString::from_str(down_topic.as_str()).unwrap()).unwrap(),
-                &SubscriptionOptions::new().at_least_once(),
+                // So a retained downlink shows as one and can be dropped.
+                &SubscriptionOptions::new().at_least_once().retain_as_published(),
             )
             .await
             .is_ok()
@@ -407,6 +408,11 @@ async fn session(
                         Some(t) if t == ca_topic.as_str() => {
                             let (reply, restart) = ca_update::handle(p.message.as_ref()).await;
                             Incoming::Ca(reply, restart)
+                        }
+                        // It would be sent again on every connection.
+                        _ if p.retain => {
+                            warn!("mqtt: retained downlink ignored");
+                            Incoming::Nothing
                         }
                         _ => match downlink::handle(gateway_id, p.message.as_ref(), &mut buf) {
                             Some(n) => Incoming::Ack(n),

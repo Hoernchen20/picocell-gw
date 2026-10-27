@@ -160,7 +160,8 @@ impl<T, const N: usize> Queue<T, N> {
 }
 
 /// LoRa time on air in µs (Semtech AN1200.13), explicit header; `cr` 1–4 for 4/5–4/8.
-/// `None` outside SF7–12 and 125/250/500 kHz, the parameters EU868 uses.
+/// `None` outside SF7–12 and 125/250/500 kHz, the parameters EU868 uses, and for a
+/// preamble above 65535 symbols.
 pub fn lora_airtime_us(
     bandwidth: u32,
     sf: u32,
@@ -169,7 +170,13 @@ pub fn lora_airtime_us(
     crc: bool,
     len: usize,
 ) -> Option<u32> {
-    if !matches!(bandwidth, 125_000 | 250_000 | 500_000) || !(7..=12).contains(&sf) || !(1..=4).contains(&cr) {
+    // The SX1302 takes a 16-bit preamble length; anything longer would also overflow
+    // the arithmetic below and undercount the airtime.
+    if !matches!(bandwidth, 125_000 | 250_000 | 500_000)
+        || !(7..=12).contains(&sf)
+        || !(1..=4).contains(&cr)
+        || preamble > u32::from(u16::MAX)
+    {
         return None;
     }
     // Low data rate optimisation for symbols of 16 ms and more.
@@ -199,6 +206,10 @@ mod tests {
         assert_eq!(lora_airtime_us(250_000, 7, 1, 8, true, 51), Some(51_328));
         assert_eq!(lora_airtime_us(125_000, 6, 1, 8, true, 13), None);
         assert_eq!(lora_airtime_us(203_000, 7, 1, 8, true, 13), None);
+        // One SF7/125 kHz symbol is 1024 µs.
+        assert_eq!(lora_airtime_us(125_000, 7, 1, 65_535, true, 13), Some(46_336 + (65_535 - 8) * 1024));
+        assert_eq!(lora_airtime_us(125_000, 7, 1, 65_536, true, 13), None);
+        assert_eq!(lora_airtime_us(125_000, 12, 1, u32::MAX, true, 13), None);
     }
 
     #[test]

@@ -29,7 +29,6 @@ use embassy_executor::Spawner;
 use embassy_net::{Ipv4Cidr, Stack, StackResources, StaticConfigV4};
 use embassy_net_wiznet::chip::W5500;
 use embassy_net_wiznet::{Device, Runner, State};
-use embassy_rp::clocks::RoscRng;
 use embassy_rp::gpio::{Input, Level, Output, Pull};
 use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, SPI0, TRNG, USB};
 use embassy_rp::spi::{Async, Config as SpiConfig, Spi};
@@ -37,7 +36,7 @@ use embassy_rp::trng::Trng;
 use embassy_rp::usb::Driver;
 use embassy_rp::watchdog::Watchdog;
 use embassy_rp::{bind_interrupts, dma, trng, usb};
-use embassy_time::{Delay, Timer};
+use embassy_time::Delay;
 use embedded_hal_bus::spi::ExclusiveDevice;
 use log::info;
 use panic_halt as _;
@@ -46,7 +45,7 @@ use wire::time::Utc;
 
 use crate::config::Net;
 use crate::ids::Ids;
-use crate::mqtt::{Buffers, UPLINKS, Uplink};
+use crate::mqtt::Buffers;
 
 bind_interrupts!(struct Irqs {
     DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
@@ -68,8 +67,13 @@ async fn net_task(mut runner: embassy_net::Runner<'static, Device<'static>>) -> 
 
 /// Stand-in for the radio: an `UplinkFrame` every 10 s with made-up radio metadata.
 /// The payload is a LoRaWAN proprietary frame (MHDR 0xe0), which no device claims.
+/// Not in production builds.
+#[cfg(not(feature = "production"))]
 #[embassy_executor::task]
 async fn test_uplink_task(gateway_id: &'static str) -> ! {
+    use crate::mqtt::{UPLINKS, Uplink};
+    use embassy_time::Timer;
+
     let mut n = 0u8;
     loop {
         Timer::after_secs(10).await;
@@ -177,11 +181,14 @@ async fn main(spawner: Spawner) {
 
     // DHCP, MQTT (TCP), SNTP (UDP) and one DNS lookup each from the MQTT and SNTP tasks.
     static RESOURCES: StaticCell<StackResources<6>> = StaticCell::new();
+    // Seeds local ports, TCP sequence numbers and DHCP transaction IDs.
+    let mut seed = [0u8; 8];
+    tls::random_bytes(&mut seed);
     let (stack, runner) = embassy_net::new(
         device,
         net_config,
         RESOURCES.init(StackResources::new()),
-        RoscRng.next_u64(),
+        u64::from_le_bytes(seed),
     );
     spawner.spawn(net_task(runner).unwrap());
     spawner.spawn(net_log_task(stack).unwrap());
@@ -191,6 +198,7 @@ async fn main(spawner: Spawner) {
     static BUFFERS: StaticCell<Buffers> = StaticCell::new();
     let bufs = BUFFERS.init(Buffers::new());
     spawner.spawn(mqtt::mqtt_task(stack, ids.gateway_id.as_str(), bufs).unwrap());
+    #[cfg(not(feature = "production"))]
     spawner.spawn(test_uplink_task(ids.gateway_id.as_str()).unwrap());
     spawner.spawn(downlink::tx_task().unwrap());
 }
