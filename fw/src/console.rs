@@ -348,6 +348,8 @@ async fn session(
         o.write(b"console locked: \"login\" first, \"help\" lists the commands\r\n").await?;
     } else if !config::provisioned() {
         o.write(b"provisioning mode: \"show\" lists the keys, \"set\" them, then \"commit\"\r\n").await?;
+    } else if let Some(why) = boot::refuse_online() {
+        out!(o, "offline: production build on a board that is not locked ({why})\r\n")?;
     }
     o.write(PROMPT.as_bytes()).await?;
     o.flush().await?;
@@ -685,7 +687,11 @@ async fn status(o: &mut Out<'_>, ctx: &Context, pending: &Settings) -> Result<()
         Some(b) => out!(o, "boot       {b}\r\n")?,
         None => o.write(b"boot       unknown\r\n").await?,
     }
-    out!(o, "security   {}\r\n", boot::security())?;
+    out!(o, "security   {}", boot::security())?;
+    if let Some(why) = boot::refuse_online() {
+        out!(o, "; not locked ({why}), offline")?;
+    }
+    o.write(b"\r\n").await?;
     out!(o, "config key {}\r\n", config_key::Status)?;
     if boot::trial() {
         let left = boot::BUY_DEADLINE_S.saturating_sub(up);

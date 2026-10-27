@@ -121,6 +121,9 @@ below), the runner refuses it without a signing key and adds the rollback versio
 in [Cargo.toml](Cargo.toml) (dev images have none, so buying one never touches the OTP
 rollback rows). `status` and the `GatewayStats` metadata show the build (`dev`/`prod`)
 and, read from OTP, secure boot, debug disable and the valid boot keys.
+A production build stays offline (console only, no MQTT) until the board is locked:
+secure boot on, a boot key that is not revoked, debug disabled in OTP. Provisioning
+works before that; `status` names the missing step.
 
 `tools/test-signing.py [--production ELF]` tests the tooling on the host: picotool
 and `verify-image.py` agree, tampered code or signature and another key fail, the

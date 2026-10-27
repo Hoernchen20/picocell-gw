@@ -143,8 +143,9 @@ async fn main(spawner: Spawner) {
     spawner.spawn(boot::watchdog_task(Watchdog::new(p.WATCHDOG)).unwrap());
     config::init().await;
     let usb = Driver::new(p.USB, Irqs);
-    if !config::provisioned() {
-        // Offline until configured on the console (sketch.md section 5.4).
+    if !config::provisioned() || boot::refuse_online().is_some() {
+        // Offline until configured on the console (sketch.md section 5.4), and a
+        // production build on a board that is not locked for good.
         spawner.spawn(console::console_task(usb, console::Context { stack: None, ids }).unwrap());
         return;
     }

@@ -95,7 +95,8 @@ enum State {
     Backoff,
 }
 
-/// Disabled until the task starts, which it does not in provisioning mode.
+/// Disabled until the task starts, which it does not in provisioning mode or on a
+/// board that is not locked (production builds).
 static STATE: AtomicU8 = AtomicU8::new(State::Disabled as u8);
 
 fn set_state(s: State) {
@@ -105,7 +106,7 @@ fn set_state(s: State) {
 /// The connection state in words.
 pub fn state() -> &'static str {
     match STATE.load(Ordering::Relaxed) {
-        x if x == State::Disabled as u8 => "disabled (provisioning mode)",
+        x if x == State::Disabled as u8 => "disabled (offline)",
         x if x == State::WaitNetwork as u8 => "waiting for the network",
         x if x == State::WaitTime as u8 => "waiting for the time",
         x if x == State::Connecting as u8 => "connecting",

@@ -76,6 +76,21 @@ pub fn security() -> OtpSecurity {
 }
 
 impl OtpSecurity {
+    /// What is missing for a locked board (sketch.md section 8.1, 8f): secure boot, a
+    /// boot key that is not revoked, debug disabled. Secure debug disable alone is not
+    /// enough, since non-secure debug still reaches the SRAM.
+    pub fn not_locked(&self) -> Option<&'static str> {
+        if !self.secure_boot {
+            Some("secure boot is off")
+        } else if self.keys_valid & !self.keys_invalid == 0 {
+            Some("no valid boot key")
+        } else if !self.debug_disable {
+            Some("debug is enabled")
+        } else {
+            None
+        }
+    }
+
     pub fn secure_boot(&self) -> &'static str {
         if self.secure_boot { "on" } else { "off" }
     }
@@ -101,6 +116,13 @@ impl OtpSecurity {
         }
         s
     }
+}
+
+/// Why a production build stays offline: the board is not locked, so a debugger or an
+/// unsigned image could read the config key and with it the MQTT password. Always
+/// `None` in dev builds.
+pub fn refuse_online() -> Option<&'static str> {
+    if cfg!(feature = "production") { security().not_locked() } else { None }
 }
 
 impl fmt::Display for OtpSecurity {
@@ -193,6 +215,9 @@ pub fn start() {
     };
     info!("boot: {i}");
     info!("boot: {}", security());
+    if let Some(why) = refuse_online() {
+        warn!("boot: production build on a board that is not locked ({why}): staying offline");
+    }
     if i.tbyb_and_update & BUY_PENDING == 0 {
         return;
     }

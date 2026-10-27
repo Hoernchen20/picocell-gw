@@ -788,6 +788,14 @@ Dev and production build:
   the device.
 - Production firmware creates the AES key only when secure boot is already on
   (otherwise unsigned code could read it).
+- A production build stays offline (console only, no MQTT) unless the board is
+  locked: secure boot on, a boot key that is not revoked, debug disabled
+  (`DEBUG_DISABLE`; secure debug disable alone leaves the SRAM to a non-secure
+  debugger). Otherwise a debugger or an unsigned image could read the config key and
+  the MQTT password. Provisioning works before the last lock step, the gateway goes
+  online after it. `fw/src/boot.rs` `refuse_online()`; `status` names the missing
+  step. Lock board tests that need the broker with SWD still on use a signed dev
+  build.
 - `status` and the `GatewayStats` metadata show `dev`/`prod` and, read from OTP at
   runtime, whether secure boot, the OTP key and SWD disable are set.
 
@@ -958,6 +966,8 @@ Milestones:
   - `tools/lock-board.py`, each step separately with a confirmation: check the
     board, boot key hash + secure boot, flash the signed image, `otp-key init`,
     provision, debug disable + glitch detector.
+  - A production build goes online only after the last step (see above), so the
+    procedure ends with a check that the gateway reaches the broker.
   - Write the procedure down in section 5.
 
 ## 9. Open points
