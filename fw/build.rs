@@ -66,6 +66,34 @@ fn main() {
 
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
     println!("cargo:rustc-env=PICOCELL_BUILD_TIME={now}");
+    // The build time is stamped only when this script runs: rerun it for any change
+    // to the sources of the image, not just the files read here. A crate's `target`
+    // (host tests) stays out, it changes without the image changing.
+    for p in [
+        "src",
+        "Cargo.toml",
+        "Cargo.lock",
+        "build.rs",
+        "chirpstack/src",
+        "chirpstack/proto",
+        "chirpstack/build.rs",
+        "chirpstack/Cargo.toml",
+        "console/src",
+        "console/Cargo.toml",
+        "jit/src",
+        "jit/Cargo.toml",
+        "settings/src",
+        "settings/Cargo.toml",
+        "sx1302/src",
+        "sx1302/hal",
+        "sx1302/shim",
+        "sx1302/build.rs",
+        "sx1302/Cargo.toml",
+        "wire/src",
+        "wire/Cargo.toml",
+    ] {
+        println!("cargo:rerun-if-changed={p}");
+    }
 
     println!("cargo:rerun-if-env-changed=PICOCELL_CONFIG_PUBKEY");
     let pubkey = match env::var_os("PICOCELL_CONFIG_PUBKEY") {
