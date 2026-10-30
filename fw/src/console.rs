@@ -193,7 +193,6 @@ pub struct Context {
     /// `None` in provisioning mode.
     pub stack: Option<Stack<'static>>,
     pub ids: &'static Ids,
-    pub radio: &'static radio::Shared,
 }
 
 #[embassy_executor::task]
@@ -479,7 +478,8 @@ clear                start from an empty config\r\n\
 discard              drop the changes since the last commit\r\n\
 commit               save the config and restart with it\r\n\
 erase                delete the stored config and restart (provisioning mode)\r\n\
-radio                power-cycle the WM1302 and read the SX1302 version and EUI\r\n\
+radio                state of the WM1302 concentrator, EUI and received frames\r\n\
+radio restart        power-cycle the WM1302 and start the concentrator again\r\n\
 otp-key              state of the config key and its OTP page\r\n\
 otp-key init         production only: write a random config key into OTP and restart\r\n\
 reboot               restart\r\n\
@@ -610,13 +610,29 @@ async fn command(
             Err(e) => Err(e),
         },
         ("radio", None, _) => {
-            let p = radio::bring_up(ctx.radio).await;
-            out!(o, "{p}\r\n")?;
-            match p.answered() {
-                true => Ok(()),
-                false => Err("no answer from the SX1302, check power and wiring"),
+            radio_status(o).await?;
+            Ok(())
+        }
+        ("radio", Some("restart"), None) => {
+            let before = radio::status().starts;
+            radio::restart();
+            o.write(b"restarting, this takes a few seconds\r\n").await?;
+            let t = Instant::now();
+            // Power cycle, probe and lgw_start on core 1.
+            while t.elapsed() < Duration::from_secs(30) {
+                Timer::after_millis(100).await;
+                let s = radio::status();
+                if s.starts != before && s.state != radio::State::Starting {
+                    break;
+                }
+            }
+            radio_status(o).await?;
+            match radio::status().state {
+                radio::State::Running => Ok(()),
+                _ => Err("radio not running"),
             }
         }
+        ("radio", Some(_), None) => Err("\"restart\" or nothing expected"),
         ("otp-key", None, _) => {
             out!(o, "{}\r\n", config_key::Status)?;
             Ok(())
@@ -688,6 +704,21 @@ async fn show(o: &mut Out<'_>, s: &Settings) -> Result<(), Gone> {
     Ok(())
 }
 
+async fn radio_status(o: &mut Out<'_>) -> Result<(), Gone> {
+    let s = radio::status();
+    out!(o, "{}\r\n", s.state)?;
+    if let Some(p) = s.probe {
+        out!(o, "SX1302 {p}\r\n")?;
+    }
+    if let Some(eui) = s.eui {
+        out!(o, "eui {eui:016x}\r\n")?;
+    }
+    if s.state == radio::State::Running {
+        out!(o, "rx {} frames ok, {} with crc errors\r\n", s.rx_ok, s.rx_bad)?;
+    }
+    Ok(())
+}
+
 async fn status(o: &mut Out<'_>, ctx: &Context, pending: &Settings) -> Result<(), Gone> {
     let m = ctx.ids.mac;
     let up = Instant::now().as_secs();
@@ -708,6 +739,7 @@ async fn status(o: &mut Out<'_>, ctx: &Context, pending: &Settings) -> Result<()
         out!(o, "trial      OTA image not bought yet: needs the broker within {left} s, else the old image boots\r\n")?;
     }
     out!(o, "gateway id {}\r\n", ctx.ids.gateway_id)?;
+    out!(o, "radio      {}\r\n", radio::status().state)?;
     match cfg.missing() {
         None => o.write(b"config     stored").await?,
         Some(k) => out!(o, "config     provisioning mode ({k} not set)")?,

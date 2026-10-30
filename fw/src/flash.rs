@@ -6,8 +6,8 @@
 //! or the other slot. `flash_op` works on storage addresses (physical flash offsets in
 //! the XIP window) and checks the partition permissions for the secure caller. It
 //! turns XIP off while it runs, so every call runs in a critical section, after DMA
-//! and XIP streaming reads from flash have finished (as in embassy-rp's flash driver).
-//! Core 1 is not used.
+//! and XIP streaming reads from flash have finished, with core 1 (the radio) parked in
+//! RAM (as in embassy-rp's flash driver).
 
 use core::ops::Range;
 
@@ -46,17 +46,21 @@ impl NorFlashError for Error {
     }
 }
 
-/// Runs `f` with interrupts off and no DMA or XIP stream reading flash, for ROM calls
-/// that turn XIP off (`flash_op`, `explicit_buy`).
+/// Runs `f` with core 1 parked, interrupts off and no DMA or XIP stream reading flash,
+/// for ROM calls that turn XIP off (`flash_op`, `explicit_buy`). Core 0 only, and not
+/// from inside a critical section (core 1 may be waiting for it to take the pause).
 pub fn with_xip_idle<R>(f: impl FnOnce() -> R) -> R {
-    critical_section::with(|_| {
+    embassy_rp::multicore::pause_core1();
+    let r = critical_section::with(|_| {
         for n in 0..16 {
             let ch = pac::DMA.ch(n);
             while ch.read_addr().read() < 0x2000_0000 && ch.ctrl_trig().read().busy() {}
         }
         while pac::XIP_CTRL.stream_ctr().read().0 > 0 {}
         f()
-    })
+    });
+    embassy_rp::multicore::resume_core1();
+    r
 }
 
 fn flash_op(op: u32, addr: u32, buf: *mut u8, len: usize) -> Result<(), Error> {

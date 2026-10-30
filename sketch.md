@@ -511,7 +511,8 @@ flowchart TB
     WD["Watchdog"]
 ```
 
-Optional: radio tasks on core 1, network/TLS on core 0.
+The concentrator (sx1302_hal, blocking) runs on core 1, network/TLS and console on
+core 0. Flash writes (config, OTA) park core 1 in RAM while XIP is off.
 
 ### 3.3 ChirpStack MQTT protocol
 
@@ -978,12 +979,16 @@ Milestones:
   once it is out; review upstream changes before bumping the rev.
 - MQTT reconnect handling (backoff, re-subscribe, ONLINE republish) and running the
   `rust-mqtt` + TLS stack on the W5500-EVB-Pico2 against a real broker.
-- `sx1302_hal` port: choose upstream Lora-net 2.1.0 vs. Seeed fork; replace
-  `loragw_spi` / `loragw_i2c` / `loragw_com` (spidev / i2c-dev ioctls),
-  `wait_ms` / `clock_gettime`, `printf` / `fopen`; choose the C library
-  (newlib-nano or picolibc); check flash size incl. the AGC/ARB firmware arrays;
-  temp sensor driver and its I2C address on the WM1302. Can be cross-compiled
-  against stub drivers before the module arrives.
+- `sx1302_hal` port: done for RX in `fw/sx1302`. Upstream Lora-net V2.1.0, unmodified
+  (Seeed's WM1302 instructions build it as is; no Seeed fork). `shim/shim.c` replaces
+  `loragw_spi.c`, the `*_spi.c` radio files and `loragw_i2c.c` with Rust callbacks,
+  stubs the USB backends, sends `printf` to the log and provides the newlib syscalls
+  (no heap, no files). newlib-nano + libm from the Arm GNU toolchain. +102 KB text,
+  +38 KB data (upstream keeps the four 8 KB AGC/ARB/CAL firmware images non-const, so
+  they are copied to RAM), +40 KB bss incl. the 32 KB core 1 stack. `lgw_start`
+  requires the STTS751 temperature sensor (scans I2C 0x39, 0x3B, 0x38) and fails
+  without it; it is on the module, on I2C0 GP4/GP5. Still open: `lgw_send`, TX gain
+  LUT, forwarding uplinks, SPI clock above 2 MHz.
 - JIT queue (own implementation, the HAL has none): 32-bit `count_us` wrap
   (~71 min), mapping "Immediately" to a timestamped TX with margin (as Concentratord
   does), `context` encoding in uplinks so ChirpStack echoes it back, collision and
@@ -1019,8 +1024,8 @@ Milestones:
 - LED blink patterns for the states listed in 2.4.
 - Stats interval and contents; whether to support `command/config`.
 - Watchdog: settled in 8b (8 s, fed every second by its own task, so it catches a
-  stalled executor but not a single stuck task). Still open: whether to use the
-  second core.
+  stalled executor but not a single stuck task). Core 1 runs the radio and is not
+  covered: a hung HAL stops reception without a reset.
 - Gateway ID: `fw/` uses the RP2350 chip ID as placeholder EUI-64 until the SX1302
   EUI can be read; switch over then (re-register the boards in ChirpStack).
 - SNTP and resolver: implemented in `fw/` and tested on hardware (DNS via DHCP and

@@ -1,0 +1,14 @@
+[package]
+name = "sx1302"
+version = "0.1.0"
+edition = "2024"
+publish = false
+license = "BSD-3-Clause"
+
+# Semtech sx1302_hal built with arm-none-eabi-gcc and newlib-nano (Arm GNU toolchain,
+# e.g. Debian/Ubuntu gcc-arm-none-eabi + libnewlib-arm-none-eabi); target builds only.
+[dependencies]
+log = "0.4"
+
+[build-dependencies]
+cc = "1"

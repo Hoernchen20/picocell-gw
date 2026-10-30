@@ -49,6 +49,7 @@ chirpstack = { path = "chirpstack" }
 jit = { path = "jit" }
 console = { path = "console" }
 settings = { path = "settings" }
+sx1302 = { path = "sx1302" }
 
 [profile.release]
 debug = 2

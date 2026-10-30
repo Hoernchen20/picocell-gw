@@ -3,8 +3,8 @@
 //! Current state: Ethernet (DHCP or static), hosts table + DNS, SNTP, TLS 1.3 + MQTT 5
 //! session with ChirpStack protobuf messages: retained ConnState with Last Will,
 //! GatewayStats every 30 s, a test UplinkFrame every 10 s, and DownlinkFrames scheduled
-//! in the JIT queue and acknowledged. No radio yet: downlinks are logged at their start;
-//! at boot the SX1302 is only probed over SPI1 (version, EUI).
+//! in the JIT queue and acknowledged. The WM1302 runs sx1302_hal on core 1 and its
+//! frames are logged, not yet forwarded; downlinks are logged at their start.
 //! Log output, console commands and provisioning on the USB-C port (CDC-ACM); the
 //! config lives encrypted in flash, and without one the gateway stays offline.
 
@@ -39,10 +39,9 @@ use embassy_rp::trng::Trng;
 use embassy_rp::usb::Driver;
 use embassy_rp::watchdog::Watchdog;
 use embassy_rp::{bind_interrupts, dma, trng, usb};
-use embassy_sync::mutex::Mutex;
 use embassy_time::Delay;
 use embedded_hal_bus::spi::ExclusiveDevice;
-use log::{info, warn};
+use log::info;
 use panic_halt as _;
 use static_cell::StaticCell;
 use wire::time::Utc;
@@ -147,20 +146,16 @@ async fn main(spawner: Spawner) {
     spawner.spawn(boot::watchdog_task(Watchdog::new(p.WATCHDOG)).unwrap());
     config::init().await;
 
-    static RADIO: StaticCell<radio::Shared> = StaticCell::new();
-    let radio = RADIO.init(Mutex::new(Radio::new(p.SPI1, p.PIN_10, p.PIN_11, p.PIN_12, p.PIN_13, p.PIN_14, p.PIN_15)));
-    let probe = radio::bring_up(radio).await;
-    if probe.answered() {
-        info!("radio: SX1302 {probe}");
-    } else {
-        warn!("radio: no answer from the SX1302 ({probe})");
-    }
+    let radio = Radio::new(
+        p.SPI1, p.PIN_10, p.PIN_11, p.PIN_12, p.PIN_13, p.PIN_14, p.PIN_15, p.I2C0, p.PIN_4, p.PIN_5,
+    );
+    radio::start(p.CORE1, radio);
 
     let usb = Driver::new(p.USB, Irqs);
     if !config::provisioned() || boot::refuse_online().is_some() {
         // Offline until configured on the console (sketch.md section 5.4), and a
         // production build on a board that is not locked for good.
-        spawner.spawn(console::console_task(usb, console::Context { stack: None, ids, radio }).unwrap());
+        spawner.spawn(console::console_task(usb, console::Context { stack: None, ids }).unwrap());
         return;
     }
 
@@ -208,7 +203,7 @@ async fn main(spawner: Spawner) {
     );
     spawner.spawn(net_task(runner).unwrap());
     spawner.spawn(net_log_task(stack).unwrap());
-    spawner.spawn(console::console_task(usb, console::Context { stack: Some(stack), ids, radio }).unwrap());
+    spawner.spawn(console::console_task(usb, console::Context { stack: Some(stack), ids }).unwrap());
     spawner.spawn(sntp::sntp_task(stack).unwrap());
 
     static BUFFERS: StaticCell<Buffers> = StaticCell::new();

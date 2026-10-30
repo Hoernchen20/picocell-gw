@@ -9,13 +9,16 @@ test `UplinkFrame` every 10 s in dev builds (proprietary frame, made-up radio
 metadata), and `DownlinkFrame`s from `command/down` (retained ones ignored; Class A
 delay and Class C immediately timing) checked against the EU868 duty cycle, scheduled
 in the JIT queue and answered with a `DownlinkTxAck` on `event/ack`; log, commands and provisioning on the USB console,
-config encrypted in flash. No radio yet: a downlink is logged on the console at its
-start time instead of sent, and the RP2350 timer stands in for the SX1302 counter.
-At boot the WM1302 is powered up and the SX1302 probed over SPI1 (below).
+config encrypted in flash. The WM1302 runs Semtech's sx1302_hal on core 1 and
+received frames are logged on the console (below), not yet forwarded. A downlink is
+logged at its start time instead of sent, and the RP2350 timer stands in for the
+SX1302 counter.
 
 ## Requirements
 
 - Rust with the target: `rustup target add thumbv8m.main-none-eabihf`
+- Arm GNU toolchain with newlib (sx1302_hal is C): `arm-none-eabi-gcc` on the PATH,
+  e.g. `apt install gcc-arm-none-eabi libnewlib-arm-none-eabi`
 - Python 3 (UF2 conversion), Mosquitto + OpenSSL for the test broker
 - [picotool](https://github.com/raspberrypi/picotool) 2.x (sealing, partition table):
   prebuilt binaries in the `pico-sdk-tools` releases; the runner finds it on the
@@ -337,22 +340,40 @@ The frames go out back to back: each starts 3.5 ms after the previous one ends
 sent. The airtime counts against
 its sub-band for an hour (`duty_cycle_stats` in `event/stats`); a reboot clears it.
 
-## Radio bring-up
+## Radio
 
-At boot the firmware switches the WM1302 on (GP15), resets the SX1302 (GP14, active
-high) and reads its version register and EUI over SPI1 at 2 MHz (GP10 SCK, GP11 MOSI,
-GP12 MISO, GP13 CS). The log shows `radio: SX1302 version 0x.. (v.), page register
-ok, eui ...`, or a warning when the chip does not answer. The `radio` console command
-power-cycles the module and probes again, handy while rewiring.
+[sx1302](sx1302) builds Semtech's sx1302_hal V2.1.0 (in `sx1302/hal`, unmodified,
+BSD license) with `cc`; `sx1302/shim` replaces its Linux SPI, I2C, clock and printf
+code. The HAL blocks for seconds while it starts and polls the SX1302 over SPI, so it
+runs on core 1; flash writes park core 1 in RAM meanwhile.
 
-`page register ok` means a write and read-back worked, so all four SPI lines are
-connected. A version of `0x00` or `0xff` means MISO floats or is stuck. The EUI comes
-from the SX1302 OTP; until sx1302_hal runs (`lgw_start` sets up the clocks first) it
-may read as zeros.
+At boot core 1 switches the WM1302 on (GP15), resets the SX1302 (GP14, active high)
+and probes it over SPI1 at 2 MHz (GP10 SCK, GP11 MOSI, GP12 MISO, GP13 CS): version
+register, and a write and read-back of the page register, which needs all four SPI
+lines. Then `lgw_start` loads the AGC/ARB firmware, calibrates both SX1250s and
+switches the SX1302 to their 32 MHz clock, with the EU868 channel plan of Semtech's
+`global_conf.json.sx1250.EU868` (867.1–868.5 MHz multi-SF, 868.3 MHz SF7/250 kHz, FSK
+868.8 MHz). `lgw_start` also needs the module's STTS751 temperature sensor on I2C0
+(GP4 SDA, GP5 SCL, pull-ups external) and fails without it. The log shows
+
+```
+radio: SX1302 version 0x10 (v1.0), page register ok, starting the concentrator
+sx1302_hal: ...
+radio: running after ... ms, EU868, eui ...
+radio: rx 868.100 MHz SF7 BW125 4/5, crc ok, rssi -57 dBm, snr 9.5 dB, 23 bytes, count_us ...
+```
+
+`radio` on the console shows the state, probe result, EUI and frame counters;
+`radio restart` power-cycles the module and starts again, handy while rewiring. A
+version of `0x00` or `0xff` means MISO floats or the module has no power;
+`page register failed` with a plausible version points at MOSI or CS;
+`no temperature sensor found` from sx1302_hal at I2C. The EUI is only valid once
+`lgw_start` ran (before, the OTP reads back a constant).
 
 Desk test with the Seeed WM1302 Pi HAT (Pi header pin numbers): GP10 → 23, GP11 → 19,
-GP12 ← 21, GP13 → 24, GP14 → 11, GP15 → 12 through 1 kΩ, VBUS (Pico pin 40) → 2,
-GND → 6 and 25. Antenna on before anything transmits.
+GP12 ← 21, GP13 → 24, GP14 → 11, GP15 → 12 through 1 kΩ, GP4 ↔ 3 (SDA), GP5 → 5
+(SCL), 4.7 kΩ from SDA and SCL to 3V3 (Pico pin 36), VBUS (Pico pin 40) → 2, GND → 6
+and 25. Antenna on before anything transmits.
 
 ## Hardware-in-the-loop test
 
