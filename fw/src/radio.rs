@@ -1,8 +1,9 @@
 //! WM1302 concentrator on core 1 (sketch.md section 3.2): power and reset, an SPI probe
 //! of the SX1302, then sx1302_hal (`sx1302` crate) with the EU868 channel plan.
-//! Received frames are logged, not yet forwarded. The HAL blocks (firmware upload,
-//! calibration, SPI polling), so it gets core 1 to itself and core 0 keeps network
-//! and console; the two share only `STATUS` and `RESTART`.
+//! The HAL blocks (firmware upload, calibration, SPI polling), so it gets core 1 to
+//! itself and core 0 keeps network and console. Core 1 hands frames with a valid CRC
+//! to `uplink_task` on core 0 (`RECEIVED`), which publishes them as `UplinkFrame`s, and
+//! keeps a snapshot of the SX1302 counter (`COUNTER`) for the downlink queue.
 //!
 //! Pins (sketch.md section 2.3): SPI1 GP10 SCK, GP11 MOSI, GP12 MISO, GP13 CS,
 //! GP14 SX1302_RESET (active high), GP15 POWER_EN, I2C0 GP4 SDA / GP5 SCL to the
@@ -16,7 +17,7 @@
 
 use core::cell::Cell;
 use core::fmt;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use critical_section::Mutex;
 use embassy_rp::Peri;
@@ -25,10 +26,15 @@ use embassy_rp::i2c::{self, I2c};
 use embassy_rp::multicore::{Stack, spawn_core1};
 use embassy_rp::peripherals::{CORE1, I2C0, PIN_4, PIN_5, PIN_10, PIN_11, PIN_12, PIN_13, PIN_14, PIN_15, SPI1};
 use embassy_rp::spi::{self, Blocking, Spi};
+use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_sync::channel::Channel;
 use embassy_time::{Duration, Instant, block_for};
 use log::{info, warn};
 use static_cell::ConstStaticCell;
 use sx1302::{Bus, BusError, Concentrator, Conf, Crc, Data, Modulation, Packet};
+
+use crate::clock;
+use crate::mqtt::{UPLINKS, Uplink};
 
 /// sx1302_hal `loragw_reg.c`: COMMON_PAGE_PAGE (bits 1:0, read/write).
 const REG_PAGE: u16 = 0x5600;
@@ -216,6 +222,22 @@ static STATUS: Mutex<Cell<Status>> = Mutex::new(Cell::new(Status {
 }));
 static RESTART: AtomicBool = AtomicBool::new(false);
 
+/// A frame for `uplink_task`, with the time core 1 fetched it.
+struct Received {
+    packet: Packet,
+    at: Instant,
+}
+
+/// Full only while nobody takes frames (offline); core 1 then drops them.
+static RECEIVED: Channel<CriticalSectionRawMutex, Received, 8> = Channel::new();
+
+/// SX1302 counter and the `Instant` it was read at, while the concentrator runs.
+static COUNTER: Mutex<Cell<Option<(u32, Instant)>>> = Mutex::new(Cell::new(None));
+
+/// Frames and frames with a valid CRC since the previous `take_counters`.
+static RX_RECEIVED: AtomicU32 = AtomicU32::new(0);
+static RX_OK: AtomicU32 = AtomicU32::new(0);
+
 pub fn status() -> Status {
     critical_section::with(|cs| STATUS.borrow(cs).get())
 }
@@ -227,6 +249,24 @@ fn update(f: impl FnOnce(&mut Status)) {
         f(&mut s);
         c.set(s);
     });
+}
+
+/// The SX1302 1 MHz counter now, extrapolated from the last read (at most a poll
+/// interval old; the two crystals drift apart by well under 1 µs in that time).
+/// `None` while the concentrator is not running.
+pub fn count_us() -> Option<u32> {
+    let (cnt, at) = critical_section::with(|cs| COUNTER.borrow(cs).get())?;
+    Some(cnt.wrapping_add(at.elapsed().as_micros() as u32))
+}
+
+fn set_counter(c: Option<(u32, Instant)>) {
+    critical_section::with(|cs| COUNTER.borrow(cs).set(c));
+}
+
+/// Frames received and frames with a valid CRC since the previous call, for
+/// `GatewayStats`.
+pub fn take_counters() -> (u32, u32) {
+    (RX_RECEIVED.swap(0, Ordering::Relaxed), RX_OK.swap(0, Ordering::Relaxed))
 }
 
 /// Asks core 1 to stop the HAL, power-cycle the module and start again.
@@ -247,6 +287,7 @@ fn run(radio: Radio) -> ! {
         update(|s| {
             *s = Status { state: State::Starting, starts: s.starts + 1, probe: None, eui: None, rx_ok: 0, rx_bad: 0 }
         });
+        set_counter(None);
         RESTART.store(false, Ordering::Relaxed);
         c.bus().power_cycle();
         let probe = c.bus().probe();
@@ -277,12 +318,25 @@ fn run(radio: Radio) -> ! {
         }
         while !RESTART.load(Ordering::Acquire) {
             match c.receive(&mut pkts) {
-                Ok(n) => pkts[..n].iter().for_each(received),
+                Ok(n) => {
+                    let at = Instant::now();
+                    for p in &pkts[..n] {
+                        if received(p) {
+                            // Dropped while offline.
+                            let _ = RECEIVED.try_send(Received { packet: p.clone(), at });
+                        }
+                    }
+                }
+                Err(e) => warn!("radio: {} failed", e.0),
+            }
+            match c.counter_us() {
+                Ok(cnt) => set_counter(Some((cnt, Instant::now()))),
                 Err(e) => warn!("radio: {} failed", e.0),
             }
             block_for(POLL);
         }
         info!("radio: restart");
+        set_counter(None);
         c.stop();
     }
 }
@@ -293,7 +347,9 @@ fn wait_restart() {
     }
 }
 
-fn received(p: &Packet) {
+/// Logs and counts a frame; true if it is to be forwarded (valid CRC, as lora_pkt_fwd
+/// by default).
+fn received(p: &Packet) -> bool {
     let crc = match p.crc() {
         Crc::Ok => "crc ok",
         Crc::Bad => "crc error",
@@ -305,6 +361,11 @@ fn received(p: &Packet) {
         Crc::Bad => s.rx_bad += 1,
         Crc::None | Crc::Unknown => {}
     });
+    RX_RECEIVED.fetch_add(1, Ordering::Relaxed);
+    let ok = matches!(p.crc(), Crc::Ok);
+    if ok {
+        RX_OK.fetch_add(1, Ordering::Relaxed);
+    }
     let (mhz, khz) = (p.freq_hz / 1_000_000, p.freq_hz % 1_000_000 / 1000);
     let len = p.payload().len();
     match p.modulation() {
@@ -320,4 +381,58 @@ fn received(p: &Packet) {
             p.rssi, p.count_us
         ),
     }
+    ok
+}
+
+/// Publishes the frames from core 1 as `UplinkFrame`s (through `mqtt::UPLINKS`, which
+/// drops them while disconnected).
+#[embassy_executor::task]
+pub async fn uplink_task(gateway_id: &'static str) -> ! {
+    loop {
+        let Received { packet: p, at } = RECEIVED.receive().await;
+        let Modulation::Lora { sf, bandwidth_hz, coderate } = p.modulation() else {
+            // ChirpStack's FSK data rate (DR7) is not used by the EU868 devices here.
+            warn!("radio: FSK frame not forwarded");
+            continue;
+        };
+        let code_rate = match coderate {
+            5 => chirpstack::gw::CodeRate::Cr45,
+            6 => chirpstack::gw::CodeRate::Cr46,
+            7 => chirpstack::gw::CodeRate::Cr47,
+            8 => chirpstack::gw::CodeRate::Cr48,
+            _ => chirpstack::gw::CodeRate::CrUndefined,
+        };
+        let mut id = [0u8; 4];
+        crate::tls::random_bytes(&mut id);
+        let rx = chirpstack::LoraRx {
+            uplink_id: u32::from_be_bytes(id),
+            frequency: p.freq_hz,
+            bandwidth: bandwidth_hz,
+            spreading_factor: sf.into(),
+            code_rate,
+            rssi: round(p.rssi),
+            snr: p.snr,
+            channel: p.if_chain.into(),
+            rf_chain: p.rf_chain.into(),
+            count_us: p.count_us,
+            crc_ok: true,
+            time_us: clock::base_us().map(|b| b + at.as_micros() as i64),
+        };
+        let mut u = Uplink { len: 0, buf: [0; 512] };
+        match chirpstack::uplink_frame(gateway_id, p.payload(), &rx, &mut u.buf) {
+            Ok(len) => u.len = len,
+            Err(_) => {
+                warn!("radio: {} byte frame does not fit an UplinkFrame", p.payload().len());
+                continue;
+            }
+        }
+        if UPLINKS.try_send(u).is_err() {
+            warn!("radio: uplink queue full, frame dropped");
+        }
+    }
+}
+
+/// To the nearest whole number (`f32::round` needs std).
+fn round(x: f32) -> i32 {
+    (if x < 0.0 { x - 0.5 } else { x + 0.5 }) as i32
 }

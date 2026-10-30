@@ -208,6 +208,7 @@ unsafe extern "C" {
     fn pc_start(conf: *const Conf, eui: *mut u64) -> c_int;
     fn pc_stop() -> c_int;
     fn pc_receive(out: *mut Packet, max: u8) -> c_int;
+    fn lgw_get_instcnt(inst_cnt_us: *mut u32) -> c_int;
 }
 
 /// Frames per `lgw_receive` call (shim `PC_RX_MAX`).
@@ -269,6 +270,15 @@ impl<B: Bus + 'static> Concentrator<B> {
         match self.call(|| unsafe { pc_receive(pkts.as_mut_ptr(), max) }) {
             n if n >= 0 => Ok(n as usize),
             _ => Err(Error("lgw_receive")),
+        }
+    }
+
+    /// The SX1302 1 MHz counter now, the one `Packet::count_us` refers to.
+    pub fn counter_us(&mut self) -> Result<u32, Error> {
+        let mut cnt = 0;
+        match self.call(|| unsafe { lgw_get_instcnt(&mut cnt) }) {
+            0 => Ok(cnt),
+            _ => Err(Error("lgw_get_instcnt")),
         }
     }
 }

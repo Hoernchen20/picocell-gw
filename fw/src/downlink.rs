@@ -1,8 +1,9 @@
 //! Downlinks (sketch.md section 3.3): `DownlinkFrame` → duty-cycle check → JIT queue →
 //! radio, answered with a `DownlinkTxAck`.
 //!
-//! No radio yet: the counter is the RP2350 timer instead of the SX1302's, and the TX
-//! task logs each frame at its start time instead of sending it.
+//! The counter is the SX1302's (`radio::count_us`), the RP2350 timer while the
+//! concentrator is not running. No TX yet: the TX task logs each frame at its start
+//! time instead of sending it.
 
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -18,6 +19,8 @@ use heapless::Vec;
 use jit::duty::{self, EU868};
 use jit::{At, Queue};
 use log::{info, warn};
+
+use crate::radio;
 
 /// A frame waiting for its start time.
 struct Tx {
@@ -53,9 +56,10 @@ static QUEUED: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 static TX_RECEIVED: AtomicU32 = AtomicU32::new(0);
 static TX_EMITTED: AtomicU32 = AtomicU32::new(0);
 
-/// The 1 MHz counter that uplink contexts carry and delay timing refers to.
+/// The 1 MHz counter that uplink contexts carry and delay timing refers to. It jumps
+/// when the concentrator starts or stops; frames queued then may miss their start.
 pub fn count_us() -> u32 {
-    Instant::now().as_micros() as u32
+    radio::count_us().unwrap_or(Instant::now().as_micros() as u32)
 }
 
 /// Monotonic µs for the duty-cycle window, unlike `count_us` which wraps.

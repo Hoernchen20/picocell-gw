@@ -987,8 +987,10 @@ Milestones:
   +38 KB data (upstream keeps the four 8 KB AGC/ARB/CAL firmware images non-const, so
   they are copied to RAM), +40 KB bss incl. the 32 KB core 1 stack. `lgw_start`
   requires the STTS751 temperature sensor (scans I2C 0x39, 0x3B, 0x38) and fails
-  without it; it is on the module, on I2C0 GP4/GP5. Still open: `lgw_send`, TX gain
-  LUT, forwarding uplinks, SPI clock above 2 MHz.
+  without it; it is on the module, on I2C0 GP4/GP5. Frames with a valid CRC are
+  published as `UplinkFrame` (LoRa only); the downlink queue runs on the SX1302
+  counter, read after each 10 ms poll and extrapolated with the RP2350 timer. Still
+  open: `lgw_send`, TX gain LUT, SPI clock above 2 MHz.
 - JIT queue (own implementation, the HAL has none): 32-bit `count_us` wrap
   (~71 min), mapping "Immediately" to a timestamped TX with margin (as Concentratord
   does), `context` encoding in uplinks so ChirpStack echoes it back, collision and
@@ -1048,9 +1050,10 @@ Milestones:
   widen the gap. `DownlinkFrame` items are
   tried in order, the first accepted one is OK and the rest IGNORED; GPS epoch →
   `GPS_UNLOCKED`, non-LoRa or other code rates → `INTERNAL_ERROR`, outside
-  863–870 MHz → `TX_FREQ`, above 27 dBm → `TX_POWER`. Until the radio is there, the
-  RP2350 timer stands in for the SX1302 counter and frames are logged at their start;
-  `tools/test-downlink.sh` answers a test uplink like a Class A downlink.
+  863–870 MHz → `TX_FREQ`, above 27 dBm → `TX_POWER`. Until `lgw_send` is there,
+  frames are logged at their start; while the concentrator is not running, the RP2350
+  timer stands in for the SX1302 counter and dev builds send test uplinks, which
+  `tools/test-downlink.sh` answers like a Class A downlink.
 - Duty cycle: `fw/jit` `duty`, ETSI EN 300 220-2 / ERC 70-03 sub-bands 863–865 (0.1 %),
   865–868 (1 %), 868.0–868.6 (1 %), 868.7–869.2 (0.1 %), 869.4–869.65 (10 %, 27 dBm)
   and 869.7–870 MHz (1 %), all others 16 dBm EIRP. The whole frame (frequency ±

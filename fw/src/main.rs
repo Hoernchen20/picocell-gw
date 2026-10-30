@@ -2,9 +2,9 @@
 //!
 //! Current state: Ethernet (DHCP or static), hosts table + DNS, SNTP, TLS 1.3 + MQTT 5
 //! session with ChirpStack protobuf messages: retained ConnState with Last Will,
-//! GatewayStats every 30 s, a test UplinkFrame every 10 s, and DownlinkFrames scheduled
-//! in the JIT queue and acknowledged. The WM1302 runs sx1302_hal on core 1 and its
-//! frames are logged, not yet forwarded; downlinks are logged at their start.
+//! GatewayStats every 30 s, UplinkFrames from the WM1302 (sx1302_hal on core 1), and
+//! DownlinkFrames scheduled in the JIT queue on the SX1302 counter and acknowledged;
+//! downlinks are logged at their start, not yet sent.
 //! Log output, console commands and provisioning on the USB-C port (CDC-ACM); the
 //! config lives encrypted in flash, and without one the gateway stays offline.
 
@@ -69,9 +69,10 @@ async fn net_task(mut runner: embassy_net::Runner<'static, Device<'static>>) -> 
     runner.run().await
 }
 
-/// Stand-in for the radio: an `UplinkFrame` every 10 s with made-up radio metadata.
-/// The payload is a LoRaWAN proprietary frame (MHDR 0xe0), which no device claims.
-/// Not in production builds.
+/// Stand-in for the radio while it is not running (no module on the desk): an
+/// `UplinkFrame` every 10 s with made-up radio metadata, for tools/hil-test.py and
+/// tools/test-downlink.sh. The payload is a LoRaWAN proprietary frame (MHDR 0xe0),
+/// which no device claims. Not in production builds.
 #[cfg(not(feature = "production"))]
 #[embassy_executor::task]
 async fn test_uplink_task(gateway_id: &'static str) -> ! {
@@ -81,6 +82,9 @@ async fn test_uplink_task(gateway_id: &'static str) -> ! {
     let mut n = 0u8;
     loop {
         Timer::after_secs(10).await;
+        if radio::status().state == radio::State::Running {
+            continue;
+        }
         n = n.wrapping_add(1);
         let mut id = [0u8; 4];
         tls::random_bytes(&mut id);
@@ -209,6 +213,7 @@ async fn main(spawner: Spawner) {
     static BUFFERS: StaticCell<Buffers> = StaticCell::new();
     let bufs = BUFFERS.init(Buffers::new());
     spawner.spawn(mqtt::mqtt_task(stack, ids.gateway_id.as_str(), bufs).unwrap());
+    spawner.spawn(radio::uplink_task(ids.gateway_id.as_str()).unwrap());
     #[cfg(not(feature = "production"))]
     spawner.spawn(test_uplink_task(ids.gateway_id.as_str()).unwrap());
     spawner.spawn(downlink::tx_task().unwrap());

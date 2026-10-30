@@ -4,15 +4,15 @@ Rust/Embassy firmware for the W5500-EVB-Pico2 (RP2350). Design: [../sketch.md](.
 
 Current state: Ethernet (DHCP or static IPv4), hosts table + DNS, SNTP, TLS 1.3 +
 MQTT 5 to the broker with ChirpStack protobuf messages: retained `ConnState` with Last
-Will, `GatewayStats` every 30 s (RX counters zero, duty-cycle load per sub-band), a
-test `UplinkFrame` every 10 s in dev builds (proprietary frame, made-up radio
-metadata), and `DownlinkFrame`s from `command/down` (retained ones ignored; Class A
-delay and Class C immediately timing) checked against the EU868 duty cycle, scheduled
-in the JIT queue and answered with a `DownlinkTxAck` on `event/ack`; log, commands and provisioning on the USB console,
-config encrypted in flash. The WM1302 runs Semtech's sx1302_hal on core 1 and
-received frames are logged on the console (below), not yet forwarded. A downlink is
-logged at its start time instead of sent, and the RP2350 timer stands in for the
-SX1302 counter.
+Will, `GatewayStats` every 30 s (packet counters, duty-cycle load per sub-band),
+`UplinkFrame`s from the WM1302, which runs Semtech's sx1302_hal on core 1 (below), and
+`DownlinkFrame`s from `command/down` (retained ones ignored; Class A delay and Class C
+immediately timing) checked against the EU868 duty cycle, scheduled in the JIT queue
+on the SX1302 counter and answered with a `DownlinkTxAck` on `event/ack`; log,
+commands and provisioning on the USB console, config encrypted in flash. A downlink
+is logged at its start time instead of sent. While the radio is not running (no
+module), dev builds publish a test `UplinkFrame` every 10 s instead (proprietary
+frame, made-up radio metadata) and the RP2350 timer stands in for the SX1302 counter.
 
 ## Requirements
 
@@ -310,7 +310,8 @@ skip the retained message and wait for a new one).
 ## Downlink test
 
 Without a network server, [../tools/test-downlink.sh](../tools/test-downlink.sh)
-answers the next test uplink like a Class A downlink from ChirpStack (RX1 after 1 s
+answers the next uplink (a test uplink, or a real one while the radio runs) like a
+Class A downlink from ChirpStack (RX1 after 1 s
 on 868.1 MHz SF7, RX2 one second later on 869.525 MHz SF12, delay timing with the
 uplink's context) and prints the `DownlinkTxAck`:
 
@@ -363,6 +364,13 @@ radio: running after ... ms, EU868, eui ...
 radio: rx 868.100 MHz SF7 BW125 4/5, crc ok, rssi -57 dBm, snr 9.5 dB, 23 bytes, count_us ...
 ```
 
+Frames with a valid CRC go to ChirpStack as `UplinkFrame` on `event/up` (LoRa only;
+an FSK frame is logged and dropped), with the SX1302 `count_us` as `context` and the
+time core 1 fetched the frame as `gw_time`; `GatewayStats` counts all frames and those
+with a valid CRC. After each poll core 1 also reads the SX1302 counter, and the
+downlink queue extrapolates from that read with the RP2350 timer, so Class A delays
+count on the clock the uplink's `count_us` came from.
+
 `radio` on the console shows the state, probe result, EUI and frame counters;
 `radio restart` power-cycles the module and starts again, handy while rewiring. A
 version of `0x00` or `0xff` means MISO floats or the module has no power;
@@ -381,8 +389,9 @@ and 25. Antenna on before anything transmits.
 the running test broker, over the USB console only: console commands, provisioning
 with `gateway.conf` (`net.hosts` pointing at this machine), MQTT connection,
 `ConnState`, `GatewayStats`, `UplinkFrame`, and the downlink and Class C cases above
-with their expected statuses. It prints PASS/FAIL per check and exits with the number
-of failures:
+with their expected statuses (with the WM1302 running, `UplinkFrame` and the Class A
+cases need a device that sends at least every 15 s). It prints PASS/FAIL per check and
+exits with the number of failures:
 
 ```sh
 tools/hil-test.py                  # provisions, then tests (about 2 minutes)
