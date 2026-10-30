@@ -41,7 +41,7 @@ use wire::time::Utc;
 
 use crate::config::Settings;
 use crate::ids::Ids;
-use crate::{boot, clock, config, config_key, downlink, login, mqtt};
+use crate::{boot, clock, config, config_key, downlink, login, mqtt, radio};
 
 type Usb = Driver<'static, USB>;
 
@@ -193,6 +193,7 @@ pub struct Context {
     /// `None` in provisioning mode.
     pub stack: Option<Stack<'static>>,
     pub ids: &'static Ids,
+    pub radio: &'static radio::Shared,
 }
 
 #[embassy_executor::task]
@@ -478,6 +479,7 @@ clear                start from an empty config\r\n\
 discard              drop the changes since the last commit\r\n\
 commit               save the config and restart with it\r\n\
 erase                delete the stored config and restart (provisioning mode)\r\n\
+radio                power-cycle the WM1302 and read the SX1302 version and EUI\r\n\
 otp-key              state of the config key and its OTP page\r\n\
 otp-key init         production only: write a random config key into OTP and restart\r\n\
 reboot               restart\r\n\
@@ -607,6 +609,14 @@ async fn command(
             Ok(()) => restart(o, false).await,
             Err(e) => Err(e),
         },
+        ("radio", None, _) => {
+            let p = radio::bring_up(ctx.radio).await;
+            out!(o, "{p}\r\n")?;
+            match p.answered() {
+                true => Ok(()),
+                false => Err("no answer from the SX1302, check power and wiring"),
+            }
+        }
         ("otp-key", None, _) => {
             out!(o, "{}\r\n", config_key::Status)?;
             Ok(())
@@ -632,7 +642,7 @@ async fn command(
         ("bootsel", None, _) => restart(o, true).await,
         (
             "help" | "status" | "log" | "show" | "unset" | "clear" | "discard" | "commit" | "erase" | "otp-key"
-            | "reboot" | "bootsel" | "login" | "logout",
+            | "radio" | "reboot" | "bootsel" | "login" | "logout",
             _,
             _,
         ) => Err("too many arguments"),

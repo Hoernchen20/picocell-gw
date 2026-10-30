@@ -11,6 +11,7 @@ delay and Class C immediately timing) checked against the EU868 duty cycle, sche
 in the JIT queue and answered with a `DownlinkTxAck` on `event/ack`; log, commands and provisioning on the USB console,
 config encrypted in flash. No radio yet: a downlink is logged on the console at its
 start time instead of sent, and the RP2350 timer stands in for the SX1302 counter.
+At boot the WM1302 is powered up and the SX1302 probed over SPI1 (below).
 
 ## Requirements
 
@@ -335,6 +336,23 @@ The frames go out back to back: each starts 3.5 ms after the previous one ends
 (start delay and margins), as the queue keeps a frame's airtime blocked until it is
 sent. The airtime counts against
 its sub-band for an hour (`duty_cycle_stats` in `event/stats`); a reboot clears it.
+
+## Radio bring-up
+
+At boot the firmware switches the WM1302 on (GP15), resets the SX1302 (GP14, active
+high) and reads its version register and EUI over SPI1 at 2 MHz (GP10 SCK, GP11 MOSI,
+GP12 MISO, GP13 CS). The log shows `radio: SX1302 version 0x.. (v.), page register
+ok, eui ...`, or a warning when the chip does not answer. The `radio` console command
+power-cycles the module and probes again, handy while rewiring.
+
+`page register ok` means a write and read-back worked, so all four SPI lines are
+connected. A version of `0x00` or `0xff` means MISO floats or is stuck. The EUI comes
+from the SX1302 OTP; until sx1302_hal runs (`lgw_start` sets up the clocks first) it
+may read as zeros.
+
+Desk test with the Seeed WM1302 Pi HAT (Pi header pin numbers): GP10 → 23, GP11 → 19,
+GP12 ← 21, GP13 → 24, GP14 → 11, GP15 → 12 through 1 kΩ, VBUS (Pico pin 40) → 2,
+GND → 6 and 25. Antenna on before anything transmits.
 
 ## Hardware-in-the-loop test
 
