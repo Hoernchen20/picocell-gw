@@ -2,8 +2,9 @@
 //! radio, answered with a `DownlinkTxAck`.
 //!
 //! The counter is the SX1302's (`radio::count_us`), the RP2350 timer while the
-//! concentrator is not running. No TX yet: the TX task logs each frame at its start
-//! time instead of sending it.
+//! concentrator is not running. The TX task hands each frame to the radio
+//! (`radio::transmit`); while the concentrator is not running it logs the frame at its
+//! start time instead.
 
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -20,7 +21,7 @@ use jit::duty::{self, EU868};
 use jit::{At, Queue};
 use log::{info, warn};
 
-use crate::radio;
+use crate::radio::{self, TxError};
 
 /// A frame waiting for its start time.
 struct Tx {
@@ -120,6 +121,12 @@ fn schedule(id: u32, i: usize, item: &chirpstack::gw::DownlinkFrameItem) -> TxAc
         warn!("downlink {id}/{i}: {} dBm too high for {} MHz", tx.power, EU868[band].name);
         return TxAckStatus::TxPower;
     }
+    // The HAL would send below the LUT at its lowest entry, above the requested power.
+    let (min, max) = sx1302::Conf::EU868.tx_power_range();
+    if !(i32::from(min)..=i32::from(max)).contains(&tx.power) {
+        warn!("downlink {id}/{i}: {} dBm outside the TX gain table ({min}..{max} dBm)", tx.power);
+        return TxAckStatus::TxPower;
+    }
     let at = match tx.timing {
         Timing::Delay { count_us, delay_us } => At::Count(count_us.wrapping_add(delay_us)),
         Timing::Immediately => At::Asap,
@@ -141,10 +148,13 @@ fn schedule(id: u32, i: usize, item: &chirpstack::gw::DownlinkFrameItem) -> TxAc
         );
         return TxAckStatus::InternalError;
     };
-    let Ok(payload) = Vec::from_slice(tx.payload) else {
-        // Cannot happen: same capacity as DownlinkFrameItem.phy_payload.
-        warn!("downlink {id}/{i}: {} B payload too long", tx.payload.len());
-        return TxAckStatus::InternalError;
+    // LoRa carries at most 255 bytes; `DownlinkFrameItem.phy_payload` holds 256.
+    let payload = match Vec::from_slice(tx.payload) {
+        Ok(p) if p.len() <= 255 => p,
+        _ => {
+            warn!("downlink {id}/{i}: {} B payload too long", tx.payload.len());
+            return TxAckStatus::InternalError;
+        }
     };
     let entry = Tx {
         downlink_id: id,
@@ -210,6 +220,25 @@ fn schedule(id: u32, i: usize, item: &chirpstack::gw::DownlinkFrameItem) -> TxAc
     }
 }
 
+/// The frame for the HAL, starting at `start`.
+fn radio_tx(start: u32, tx: &Tx) -> sx1302::Tx {
+    let mut r = sx1302::Tx::EMPTY;
+    r.freq_hz = tx.frequency;
+    r.count_us = start;
+    r.bandwidth_hz = tx.bandwidth;
+    // Checked by `lora_airtime_us`: SF7-12, a 16-bit preamble.
+    r.sf = tx.spreading_factor as u8;
+    r.preamble = tx.preamble as u16;
+    r.coderate = tx.code_rate as u8;
+    // Within the gain table, checked by `schedule`.
+    r.rf_power = tx.power as i8;
+    r.invert_pol = tx.invert_polarity;
+    r.crc = tx.crc;
+    // At most 255 bytes, checked by `schedule`.
+    r.set_payload(&tx.payload);
+    r
+}
+
 /// Takes each frame from the queue `jit::HANDOVER_US` before its start.
 #[embassy_executor::task]
 pub async fn tx_task() -> ! {
@@ -229,31 +258,50 @@ pub async fn tx_task() -> ! {
         else {
             continue;
         };
-        // The radio takes the frame here, timestamped with `start` (lgw_send). Without
-        // one, wait for the start and log it.
         let lead = jit::offset(start, count_us());
         if lead < jit::TX_START_DELAY_US as i32 {
             warn!("downlink {}: missed its start by {} µs", tx.downlink_id, -lead);
             critical_section::with(|cs| SCHEDULER.borrow_ref_mut(cs).queue.tx_done());
             continue;
         }
-        Timer::after_micros(lead as u64).await;
-        TX_EMITTED.fetch_add(1, Ordering::Relaxed);
-        info!(
-            "downlink {}: TX (no radio) at count_us {start}: {} Hz, {} dBm, SF{} BW{} CR4/{}{}, preamble {}{}, {} B",
-            tx.downlink_id,
-            tx.frequency,
-            tx.power,
-            tx.spreading_factor,
-            tx.bandwidth / 1000,
-            tx.code_rate + 4,
-            if tx.invert_polarity { ", inverted" } else { "" },
-            tx.preamble,
-            if tx.crc { ", CRC" } else { "" },
-            tx.payload.len()
-        );
-        // The radio reports the end of the frame; until then the queue keeps it blocked.
-        Timer::after_micros(u64::from(tx.airtime_us)).await;
+        let sent = match radio::transmit(radio_tx(start, &tx), tx.airtime_us).await {
+            Ok(()) => Ok("TX"),
+            // Not running when the frame was queued either: the timer stood in for its
+            // counter, so the start is still right.
+            Err(TxError::NotRunning) if radio::count_us().is_none() => {
+                let lead = jit::offset(start, count_us());
+                if lead > 0 {
+                    Timer::after_micros(lead as u64).await;
+                }
+                Timer::after_micros(u64::from(tx.airtime_us)).await;
+                Ok("TX (no radio)")
+            }
+            Err(e) => Err(e),
+        };
+        // Until here the queue kept the frame's airtime blocked.
         critical_section::with(|cs| SCHEDULER.borrow_ref_mut(cs).queue.tx_done());
+        match sent {
+            Ok(what) => {
+                TX_EMITTED.fetch_add(1, Ordering::Relaxed);
+                info!(
+                    "downlink {}: {what} at count_us {start}: {} Hz, {} dBm, SF{} BW{} CR4/{}{}, preamble {}{}, {} B",
+                    tx.downlink_id,
+                    tx.frequency,
+                    tx.power,
+                    tx.spreading_factor,
+                    tx.bandwidth / 1000,
+                    tx.code_rate + 4,
+                    if tx.invert_polarity { ", inverted" } else { "" },
+                    tx.preamble,
+                    if tx.crc { ", CRC" } else { "" },
+                    tx.payload.len()
+                );
+            }
+            Err(TxError::Late { lead_us }) => {
+                warn!("downlink {}: not sent, {lead_us} µs before its start", tx.downlink_id)
+            }
+            Err(TxError::NotRunning) => warn!("downlink {}: not sent, radio restarted", tx.downlink_id),
+            Err(TxError::Failed(why)) => warn!("downlink {}: not sent, {why}", tx.downlink_id),
+        }
     }
 }

@@ -15,6 +15,11 @@ use heapless::Vec;
 pub const TX_START_DELAY_US: u32 = 1_500;
 /// Guard time around each frame.
 pub const TX_MARGIN_US: u32 = 1_000;
+/// Upper bound for loading a frame into the SX1302 (`lgw_send`, ~1.9 ms at 2 MHz SPI).
+pub const LGW_SEND_US: u32 = 3_000;
+/// From the end of one frame until the radio task has the next one: the radio sees
+/// the TX modem free, the queue hands over the next frame (~1.3 ms measured).
+pub const TX_HANDOFF_US: u32 = 1_500;
 /// How long before its start the radio task takes a frame from the queue.
 pub const HANDOVER_US: u32 = 30_000;
 /// Frames that start sooner than this when queued are too late.
@@ -23,8 +28,9 @@ pub const MIN_LEAD_US: u32 = 40_000 + TX_START_DELAY_US + TX_MARGIN_US;
 /// and there are no Class B beacons.
 pub const MAX_ADVANCE_US: u32 = 60_000_000;
 
-/// Occupied before the start and after the end of each frame.
-const PRE: i64 = (TX_START_DELAY_US + TX_MARGIN_US) as i64;
+/// Occupied before the start and after the end of each frame: the frame after another
+/// one is handed over once that is done and still has to be loaded.
+const PRE: i64 = (TX_HANDOFF_US + LGW_SEND_US + TX_START_DELAY_US + TX_MARGIN_US) as i64;
 const POST: i64 = TX_MARGIN_US as i64;
 
 #[derive(Debug, PartialEq)]
@@ -230,10 +236,10 @@ mod tests {
         let t = 1_000_000;
         q.enqueue(now, At::Count(t), AIR, 0).unwrap();
         // Needs AIR + margins after t, and the start delay + margins before it.
-        let after = t + AIR + TX_MARGIN_US + TX_START_DELAY_US + TX_MARGIN_US;
+        let after = t + AIR + TX_MARGIN_US + TX_HANDOFF_US + LGW_SEND_US + TX_START_DELAY_US + TX_MARGIN_US;
         assert_eq!(q.enqueue(now, At::Count(after - 1), AIR, 1), Err(Error::Collision));
         assert_eq!(q.enqueue(now, At::Count(after), AIR, 1), Ok(after));
-        let before = t - AIR - (TX_MARGIN_US + TX_START_DELAY_US + TX_MARGIN_US);
+        let before = t - AIR - (TX_MARGIN_US + TX_HANDOFF_US + LGW_SEND_US + TX_START_DELAY_US + TX_MARGIN_US);
         assert_eq!(q.enqueue(now, At::Count(before + 1), AIR, 2), Err(Error::Collision));
         assert_eq!(q.enqueue(now, At::Count(before), AIR, 2), Ok(before));
         assert_eq!(q.enqueue(now, At::Count(5_000_000), AIR, 3), Ok(5_000_000));
@@ -245,7 +251,7 @@ mod tests {
         let mut q: Queue<u8, 4> = Queue::new();
         let now = 0;
         assert_eq!(q.enqueue(now, At::Asap, AIR, 0), Ok(MIN_LEAD_US));
-        let gap = AIR + TX_MARGIN_US + TX_START_DELAY_US + TX_MARGIN_US;
+        let gap = AIR + TX_MARGIN_US + TX_HANDOFF_US + LGW_SEND_US + TX_START_DELAY_US + TX_MARGIN_US;
         // Too small a gap behind the first frame, so the next one goes behind the second.
         let second = MIN_LEAD_US + 2 * gap - 1;
         q.enqueue(now, At::Count(second), AIR, 1).unwrap();
@@ -277,7 +283,7 @@ mod tests {
         let now = MIN_LEAD_US - HANDOVER_US;
         assert_eq!(q.pop_due(now), Some((MIN_LEAD_US, 0)));
         // The popped frame still occupies its airtime.
-        let after = MIN_LEAD_US + AIR + TX_MARGIN_US + TX_START_DELAY_US + TX_MARGIN_US;
+        let after = MIN_LEAD_US + AIR + TX_MARGIN_US + TX_HANDOFF_US + LGW_SEND_US + TX_START_DELAY_US + TX_MARGIN_US;
         assert_eq!(q.enqueue(now, At::Count(after - 1), AIR, 1), Err(Error::Collision));
         assert_eq!(q.enqueue(now, At::Asap, AIR, 2), Ok(after));
         // Done: a short frame fits in front of the queued one again.

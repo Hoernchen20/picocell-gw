@@ -4,6 +4,9 @@
 //! itself and core 0 keeps network and console. Core 1 hands frames with a valid CRC
 //! to `uplink_task` on core 0 (`RECEIVED`), which publishes them as `UplinkFrame`s, and
 //! keeps a snapshot of the SX1302 counter (`COUNTER`) for the downlink queue.
+//! Downlinks go the other way: `transmit` leaves a frame for core 1 (`PENDING`), which
+//! loads it into the SX1302 between polls (`lgw_send`, timestamped) and answers on
+//! `TX_RESULT` once the TX modem is free again.
 //!
 //! Pins (sketch.md section 2.3): SPI1 GP10 SCK, GP11 MOSI, GP12 MISO, GP13 CS,
 //! GP14 SX1302_RESET (active high), GP15 POWER_EN, I2C0 GP4 SDA / GP5 SCL to the
@@ -15,7 +18,7 @@
 //! 15-bit address with bit 7 of the first byte set for a write, then the data; a read
 //! clocks one dummy byte before the data.
 
-use core::cell::Cell;
+use core::cell::{Cell, RefCell};
 use core::fmt;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
@@ -28,10 +31,11 @@ use embassy_rp::peripherals::{CORE1, I2C0, PIN_4, PIN_5, PIN_10, PIN_11, PIN_12,
 use embassy_rp::spi::{self, Blocking, Spi};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
+use embassy_sync::signal::Signal;
 use embassy_time::{Duration, Instant, block_for};
 use log::{info, warn};
 use static_cell::ConstStaticCell;
-use sx1302::{Bus, BusError, Concentrator, Conf, Crc, Data, Modulation, Packet};
+use sx1302::{Bus, BusError, Concentrator, Conf, Crc, Data, Modulation, Packet, Tx, TxStatus};
 
 use crate::clock;
 use crate::mqtt::{UPLINKS, Uplink};
@@ -45,6 +49,11 @@ const MUX_SX1302: u8 = 0x00;
 const SPI_HZ: u32 = 2_000_000;
 /// As lora_pkt_fwd polls `lgw_receive`.
 const POLL: Duration = Duration::from_millis(10);
+/// Between polls core 1 checks this often for a frame to send and for the end of the one
+/// on air.
+const TX_STEP: Duration = Duration::from_micros(200);
+/// A frame still on air this long after its computed end is stopped.
+const TX_OVERRUN_US: i32 = 100_000;
 /// Core 1 runs the HAL; `lgw_receive` and the calibration keep a few KB on the stack.
 const CORE1_STACK: usize = 32 * 1024;
 
@@ -62,6 +71,8 @@ pub struct Probe {
     pub version: u8,
     /// The page register read back what was written (MOSI, MISO, SCK and CS work).
     pub loopback: bool,
+    /// A reset pulse set the page register back to 0 (SX1302_RESET works).
+    pub reset: bool,
 }
 
 impl Probe {
@@ -75,7 +86,11 @@ impl fmt::Display for Probe {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let v = self.version;
         write!(f, "version 0x{v:02x} (v{}.{}), ", v >> 4, v & 0x0f)?;
-        write!(f, "page register {}", if self.loopback { "ok" } else { "failed" })
+        write!(f, "page register {}", if self.loopback { "ok" } else { "failed" })?;
+        if self.loopback {
+            write!(f, ", reset {}", if self.reset { "ok" } else { "failed" })?;
+        }
+        Ok(())
     }
 }
 
@@ -118,6 +133,10 @@ impl Radio {
         // Buck (or the Pi HAT regulator) up and settled.
         block_for(Duration::from_millis(100));
         self.cs.set_high();
+        self.pulse_reset();
+    }
+
+    fn pulse_reset(&mut self) {
         self.reset.set_high();
         block_for(Duration::from_millis(10));
         self.reset.set_low();
@@ -139,15 +158,18 @@ impl Radio {
         self.cs.set_high();
     }
 
-    /// Reads the version, writes and reads back the page register.
+    /// Reads the version, writes and reads back the page register, then checks that a
+    /// reset pulse clears it.
     fn probe(&mut self) -> Probe {
         let version = self.read(REG_VERSION);
-        let loopback = [1, 2, 3, 0].into_iter().all(|p| {
+        let loopback = [1, 2, 3, 0, 2].into_iter().all(|p| {
             self.write(REG_PAGE, p);
             self.read(REG_PAGE) & 0x03 == p
         });
+        self.pulse_reset();
+        let reset = self.read(REG_PAGE) & 0x03 == 0;
         self.write(REG_PAGE, 0);
-        Probe { version, loopback }
+        Probe { version, loopback, reset }
     }
 }
 
@@ -210,6 +232,11 @@ pub struct Status {
     /// Frames since the last start, with a valid CRC and with a CRC error.
     pub rx_ok: u32,
     pub rx_bad: u32,
+    /// Frames sent since the last start, and those that were not.
+    pub tx_ok: u32,
+    pub tx_failed: u32,
+    /// The longest `lgw_send` took since the last start, µs.
+    pub tx_load_max_us: u32,
 }
 
 static STATUS: Mutex<Cell<Status>> = Mutex::new(Cell::new(Status {
@@ -219,6 +246,9 @@ static STATUS: Mutex<Cell<Status>> = Mutex::new(Cell::new(Status {
     eui: None,
     rx_ok: 0,
     rx_bad: 0,
+    tx_ok: 0,
+    tx_failed: 0,
+    tx_load_max_us: 0,
 }));
 static RESTART: AtomicBool = AtomicBool::new(false);
 
@@ -230,6 +260,27 @@ struct Received {
 
 /// Full only while nobody takes frames (offline); core 1 then drops them.
 static RECEIVED: Channel<CriticalSectionRawMutex, Received, 8> = Channel::new();
+
+/// A frame from `transmit`, taken by core 1.
+struct Pending {
+    tx: Tx,
+    airtime_us: u32,
+}
+
+static PENDING: Mutex<RefCell<Option<Pending>>> = Mutex::new(RefCell::new(None));
+
+/// What became of a frame from `transmit`.
+#[derive(Clone, Copy, Debug)]
+pub enum TxError {
+    /// The concentrator is not running (any more).
+    NotRunning,
+    /// Too close to its start to load it, or loaded too late to make it.
+    Late { lead_us: i32 },
+    /// The HAL call that failed, or what went wrong on air.
+    Failed(&'static str),
+}
+
+static TX_RESULT: Signal<CriticalSectionRawMutex, Result<(), TxError>> = Signal::new();
 
 /// SX1302 counter and the `Instant` it was read at, while the concentrator runs.
 static COUNTER: Mutex<Cell<Option<(u32, Instant)>>> = Mutex::new(Cell::new(None));
@@ -274,6 +325,32 @@ pub fn restart() {
     RESTART.store(true, Ordering::Release);
 }
 
+/// Sends `tx` (timestamped on the SX1302 counter) and waits until the TX modem is free
+/// again: after the frame is on air, or when it was not sent. One frame at a time.
+pub async fn transmit(mut tx: Tx, airtime_us: u32) -> Result<(), TxError> {
+    let Some(chain) = Conf::EU868.tx_chain() else {
+        return Err(TxError::Failed("no TX radio"));
+    };
+    tx.rf_chain = chain;
+    if status().state != State::Running {
+        return Err(TxError::NotRunning);
+    }
+    TX_RESULT.reset();
+    critical_section::with(|cs| *PENDING.borrow_ref_mut(cs) = Some(Pending { tx, airtime_us }));
+    TX_RESULT.wait().await
+}
+
+fn take_pending() -> Option<Pending> {
+    critical_section::with(|cs| PENDING.borrow_ref_mut(cs).take())
+}
+
+/// Answers a frame left while the concentrator was not running.
+fn drop_pending() {
+    if take_pending().is_some() {
+        TX_RESULT.signal(Err(TxError::NotRunning));
+    }
+}
+
 /// Hands the module to core 1, which brings it up and keeps receiving.
 pub fn start(core1: Peri<'static, CORE1>, radio: Radio) {
     static STACK: ConstStaticCell<Stack<CORE1_STACK>> = ConstStaticCell::new(Stack::new());
@@ -285,7 +362,17 @@ fn run(radio: Radio) -> ! {
     let mut pkts = [const { Packet::EMPTY }; sx1302::RX_MAX];
     loop {
         update(|s| {
-            *s = Status { state: State::Starting, starts: s.starts + 1, probe: None, eui: None, rx_ok: 0, rx_bad: 0 }
+            *s = Status {
+                state: State::Starting,
+                starts: s.starts + 1,
+                probe: None,
+                eui: None,
+                rx_ok: 0,
+                rx_bad: 0,
+                tx_ok: 0,
+                tx_failed: 0,
+                tx_load_max_us: 0,
+            }
         });
         set_counter(None);
         RESTART.store(false, Ordering::Relaxed);
@@ -297,6 +384,10 @@ fn run(radio: Radio) -> ! {
             update(|s| s.state = State::NoAnswer);
             wait_restart();
             continue;
+        }
+        if !probe.reset {
+            // A fresh power-up still works, but a restart keeps the state of the last run.
+            warn!("radio: reset did not clear the SX1302, check SX1302_RESET (GP14)");
         }
         info!("radio: SX1302 {probe}, starting the concentrator");
         let t = Instant::now();
@@ -316,6 +407,8 @@ fn run(radio: Radio) -> ! {
                 continue;
             }
         }
+        drop_pending();
+        let mut on_air = None;
         while !RESTART.load(Ordering::Acquire) {
             match c.receive(&mut pkts) {
                 Ok(n) => {
@@ -333,18 +426,130 @@ fn run(radio: Radio) -> ! {
                 Ok(cnt) => set_counter(Some((cnt, Instant::now()))),
                 Err(e) => warn!("radio: {} failed", e.0),
             }
-            block_for(POLL);
+            // Until the next poll, load frames from core 0 and watch the one on air.
+            let next = Instant::now() + POLL;
+            while Instant::now() < next {
+                if on_air.is_none()
+                    && let Some(p) = take_pending()
+                {
+                    on_air = load(&mut c, p);
+                }
+                if let Some(t) = on_air
+                    && let Some(r) = tx_finished(&mut c, t)
+                {
+                    finish(r);
+                    on_air = None;
+                }
+                block_for(TX_STEP);
+            }
         }
         info!("radio: restart");
+        if let Some(OnAir { chain, .. }) = on_air {
+            let _ = c.tx_abort(chain);
+            finish(Err(TxError::NotRunning));
+        }
         set_counter(None);
         c.stop();
+        drop_pending();
     }
 }
 
 fn wait_restart() {
     while !RESTART.load(Ordering::Acquire) {
-        block_for(Duration::from_millis(100));
+        drop_pending();
+        block_for(Duration::from_millis(10));
     }
+}
+
+/// A frame loaded into the TX modem.
+#[derive(Clone, Copy)]
+struct OnAir {
+    chain: u8,
+    start: u32,
+    end: u32,
+}
+
+/// The SX1302 counter, read now (`count_us` may be up to a poll old).
+fn counter(c: &mut Concentrator<Radio>) -> u32 {
+    match c.counter_us() {
+        Ok(cnt) => {
+            set_counter(Some((cnt, Instant::now())));
+            cnt
+        }
+        Err(_) => count_us().unwrap_or(0),
+    }
+}
+
+/// Loads `p` into the TX modem; `None` if it was not sent (answered already).
+fn load(c: &mut Concentrator<Radio>, p: Pending) -> Option<OnAir> {
+    let Pending { tx, airtime_us } = p;
+    let chain = tx.rf_chain;
+    let start = tx.count_us;
+    match c.tx_status(chain) {
+        Ok(TxStatus::Free) => {}
+        Ok(st) => {
+            finish(Err(TxError::Failed(match st {
+                TxStatus::Off => "TX modem off",
+                TxStatus::Scheduled | TxStatus::Emitting => "TX modem busy",
+                _ => "TX modem state unknown",
+            })));
+            return None;
+        }
+        Err(e) => {
+            finish(Err(TxError::Failed(e.0)));
+            return None;
+        }
+    }
+    // lgw_send has to finish before the HAL's trigger, TX_START_DELAY_US early.
+    let lead = jit::offset(start, counter(c));
+    if lead < (jit::LGW_SEND_US + jit::TX_START_DELAY_US) as i32 {
+        finish(Err(TxError::Late { lead_us: lead }));
+        return None;
+    }
+    let t = Instant::now();
+    if let Err(e) = c.send(&tx) {
+        finish(Err(TxError::Failed(e.0)));
+        return None;
+    }
+    let took = t.elapsed().as_micros() as u32;
+    update(|s| s.tx_load_max_us = s.tx_load_max_us.max(took));
+    let lead = jit::offset(start, counter(c));
+    info!("radio: tx loaded in {took} µs, {lead} µs before its start");
+    Some(OnAir { chain, start, end: start.wrapping_add(airtime_us) })
+}
+
+/// The result once the frame is done: sent, or stuck and stopped.
+fn tx_finished(c: &mut Concentrator<Radio>, t: OnAir) -> Option<Result<(), TxError>> {
+    let now = count_us()?;
+    let past_end = jit::offset(now, t.end);
+    if past_end < 0 {
+        return None;
+    }
+    let st = match c.tx_status(t.chain) {
+        Ok(st) => st,
+        Err(e) => return Some(Err(TxError::Failed(e.0))),
+    };
+    match st {
+        TxStatus::Free => Some(Ok(())),
+        // Loaded after its trigger time: the modem would wait for the counter to wrap.
+        TxStatus::Scheduled => {
+            let _ = c.tx_abort(t.chain);
+            Some(Err(TxError::Late { lead_us: -jit::offset(now, t.start) }))
+        }
+        _ if past_end > TX_OVERRUN_US => {
+            let _ = c.tx_abort(t.chain);
+            Some(Err(TxError::Failed("still on air after its airtime")))
+        }
+        _ => None,
+    }
+}
+
+fn finish(r: Result<(), TxError>) {
+    update(|s| match r {
+        Ok(()) => s.tx_ok += 1,
+        Err(_) => s.tx_failed += 1,
+    });
+    TX_RESULT.signal(r);
 }
 
 /// Logs and counts a frame; true if it is to be forwarded (valid CRC, as lora_pkt_fwd

@@ -56,6 +56,22 @@ pub struct Chan {
     _pad: [u8; 2],
 }
 
+/// One TX gain LUT entry for an SX1250 (shim `struct pc_tx_gain`).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct TxGain {
+    /// At the module's connector, dBm.
+    pub rf_power: i8,
+    /// External PA on.
+    pub pa_gain: u8,
+    pub pwr_idx: u8,
+    _pad: u8,
+}
+
+const fn gain(rf_power: i8, pa_gain: u8, pwr_idx: u8) -> TxGain {
+    TxGain { rf_power, pa_gain, pwr_idx, _pad: 0 }
+}
+
 /// Channel plan and board settings (shim `struct pc_conf`).
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -74,9 +90,13 @@ pub struct Conf {
     pub lorawan_public: bool,
     /// Radio that clocks the SX1302.
     pub clksrc: u8,
+    /// For the radios with `tx_enable`, by rising `rf_power`.
+    pub tx_gain: [TxGain; 16],
+    pub tx_gain_len: u8,
+    _pad: [u8; 3],
 }
 
-const _: () = assert!(size_of::<Conf>() == 160 && offset_of!(Conf, clksrc) == 159);
+const _: () = assert!(size_of::<Conf>() == 228 && offset_of!(Conf, tx_gain_len) == 224);
 
 const fn radio(freq_hz: u32, tx_enable: bool) -> Radio {
     Radio {
@@ -119,7 +139,44 @@ impl Conf {
         multi_sf_mask: 0xff,
         lorawan_public: true,
         clksrc: 0,
+        // WM1302 SPI EU868, radio 0 (global_conf.json.sx1250.EU868, sx1302_hal V2.1.0).
+        tx_gain: [
+            gain(12, 0, 15),
+            gain(13, 0, 16),
+            gain(14, 0, 17),
+            gain(15, 0, 19),
+            gain(16, 0, 20),
+            gain(17, 0, 22),
+            gain(18, 1, 1),
+            gain(19, 1, 2),
+            gain(20, 1, 3),
+            gain(21, 1, 4),
+            gain(22, 1, 5),
+            gain(23, 1, 6),
+            gain(24, 1, 7),
+            gain(25, 1, 9),
+            gain(26, 1, 11),
+            gain(27, 1, 14),
+        ],
+        tx_gain_len: 16,
+        _pad: [0; 3],
     };
+
+    /// The TX power range of the gain LUT, dBm. The HAL sends at the highest entry not
+    /// above the requested power, and at the lowest one below that.
+    pub fn tx_power_range(&self) -> (i8, i8) {
+        let lut = &self.tx_gain[..usize::from(self.tx_gain_len).min(self.tx_gain.len())];
+        match lut {
+            [] => (0, 0),
+            [first, .., last] => (first.rf_power, last.rf_power),
+            [only] => (only.rf_power, only.rf_power),
+        }
+    }
+
+    /// The RF chain the HAL transmits on: the first with `tx_enable`.
+    pub fn tx_chain(&self) -> Option<u8> {
+        self.radio.iter().position(|r| r.enable && r.tx_enable).map(|i| i as u8)
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -200,6 +257,73 @@ impl Packet {
     }
 }
 
+/// A LoRa frame to send, timestamped (shim `struct pc_tx`).
+#[repr(C)]
+#[derive(Clone)]
+pub struct Tx {
+    pub freq_hz: u32,
+    /// SX1302 counter at the start of the preamble.
+    pub count_us: u32,
+    pub bandwidth_hz: u32,
+    /// Symbols; 0 for the HAL's default.
+    pub preamble: u16,
+    size: u16,
+    pub sf: u8,
+    /// 4/5..4/8 as 1..4.
+    pub coderate: u8,
+    /// dBm at the connector, see [`Conf::tx_power_range`].
+    pub rf_power: i8,
+    pub invert_pol: bool,
+    pub crc: bool,
+    pub rf_chain: u8,
+    _pad: [u8; 2],
+    payload: [u8; 256],
+}
+
+const _: () = assert!(size_of::<Tx>() == 280 && offset_of!(Tx, payload) == 24);
+
+impl Tx {
+    pub const EMPTY: Tx = Tx {
+        freq_hz: 0,
+        count_us: 0,
+        bandwidth_hz: 0,
+        preamble: 0,
+        size: 0,
+        sf: 0,
+        coderate: 0,
+        rf_power: 0,
+        invert_pol: false,
+        crc: false,
+        rf_chain: 0,
+        _pad: [0; 2],
+        payload: [0; 256],
+    };
+
+    pub fn payload(&self) -> &[u8] {
+        &self.payload[..usize::from(self.size).min(self.payload.len())]
+    }
+
+    /// Copies `p`, at most 255 bytes (the LoRa limit); false if it is longer.
+    pub fn set_payload(&mut self, p: &[u8]) -> bool {
+        if p.len() > 255 {
+            return false;
+        }
+        self.payload[..p.len()].copy_from_slice(p);
+        self.size = p.len() as u16;
+        true
+    }
+}
+
+/// TX modem state of an RF chain (`TX_STATUS` in loragw_hal.h).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TxStatus {
+    Unknown,
+    Off,
+    Free,
+    Scheduled,
+    Emitting,
+}
+
 /// The HAL call that failed; the HAL logs the details.
 #[derive(Debug, Clone, Copy)]
 pub struct Error(pub &'static str);
@@ -209,6 +333,9 @@ unsafe extern "C" {
     fn pc_stop() -> c_int;
     fn pc_receive(out: *mut Packet, max: u8) -> c_int;
     fn lgw_get_instcnt(inst_cnt_us: *mut u32) -> c_int;
+    fn pc_send(tx: *const Tx) -> c_int;
+    fn pc_tx_status(rf_chain: u8) -> c_int;
+    fn pc_tx_abort(rf_chain: u8) -> c_int;
 }
 
 /// Frames per `lgw_receive` call (shim `PC_RX_MAX`).
@@ -256,7 +383,8 @@ impl<B: Bus + 'static> Concentrator<B> {
             -3 => Err(Error("lgw_demod_setconf")),
             -4 => Err(Error("lgw_rxif_setconf")),
             -5 => Err(Error("lgw_start")),
-            _ => Err(Error("lgw_get_eui")),
+            -6 => Err(Error("lgw_get_eui")),
+            _ => Err(Error("lgw_txgain_setconf")),
         }
     }
 
@@ -279,6 +407,34 @@ impl<B: Bus + 'static> Concentrator<B> {
         match self.call(|| unsafe { lgw_get_instcnt(&mut cnt) }) {
             0 => Ok(cnt),
             _ => Err(Error("lgw_get_instcnt")),
+        }
+    }
+
+    /// Loads a frame into the TX modem of `tx.rf_chain`, which then waits for
+    /// `tx.count_us`. The modem holds one frame: it has to be [`TxStatus::Free`].
+    pub fn send(&mut self, tx: &Tx) -> Result<(), Error> {
+        match self.call(|| unsafe { pc_send(tx) }) {
+            0 => Ok(()),
+            _ => Err(Error("lgw_send")),
+        }
+    }
+
+    pub fn tx_status(&mut self, rf_chain: u8) -> Result<TxStatus, Error> {
+        match self.call(|| unsafe { pc_tx_status(rf_chain) }) {
+            1 => Ok(TxStatus::Off),
+            2 => Ok(TxStatus::Free),
+            3 => Ok(TxStatus::Scheduled),
+            4 => Ok(TxStatus::Emitting),
+            n if n >= 0 => Ok(TxStatus::Unknown),
+            _ => Err(Error("lgw_status")),
+        }
+    }
+
+    /// Drops a scheduled frame, or stops one on air.
+    pub fn tx_abort(&mut self, rf_chain: u8) -> Result<(), Error> {
+        match self.call(|| unsafe { pc_tx_abort(rf_chain) }) {
+            0 => Ok(()),
+            _ => Err(Error("lgw_abort_tx")),
         }
     }
 }

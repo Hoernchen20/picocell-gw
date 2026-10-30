@@ -9,10 +9,11 @@ Will, `GatewayStats` every 30 s (packet counters, duty-cycle load per sub-band),
 `DownlinkFrame`s from `command/down` (retained ones ignored; Class A delay and Class C
 immediately timing) checked against the EU868 duty cycle, scheduled in the JIT queue
 on the SX1302 counter and answered with a `DownlinkTxAck` on `event/ack`; log,
-commands and provisioning on the USB console, config encrypted in flash. A downlink
-is logged at its start time instead of sent. While the radio is not running (no
-module), dev builds publish a test `UplinkFrame` every 10 s instead (proprietary
-frame, made-up radio metadata) and the RP2350 timer stands in for the SX1302 counter.
+commands and provisioning on the USB console, config encrypted in flash. Downlinks go
+out through the WM1302. While the radio is not running (no module), a downlink is
+logged at its start time instead, dev builds publish a test `UplinkFrame` every 10 s
+(proprietary frame, made-up radio metadata) and the RP2350 timer stands in for the
+SX1302 counter.
 
 ## Requirements
 
@@ -321,7 +322,8 @@ tools/test-downlink.sh <gateway-id> 0     # RX1 TOO_LATE, RX2 OK
 tools/test-downlink.sh <gateway-id> 61    # both TOO_EARLY (limit 60 s from queuing)
 ```
 
-The console shows the queued frame and, at its start time, `TX (no radio)`. An
+The console shows the queued frame, `radio: tx loaded in ... µs` and, once it is on
+air, `TX at count_us ...`; without the radio `TX (no radio)` at its start time. An
 `IGNORED` item decodes as an empty `items {}` (proto3 default value).
 
 [../tools/test-classc.sh](../tools/test-classc.sh) sends Class C downlinks
@@ -336,9 +338,9 @@ tools/test-classc.sh <gateway-id> 1 868850000 12 20    # TX_POWER (16 dBm there)
 tools/test-classc.sh <gateway-id> 1 868650000          # TX_FREQ (between sub-bands)
 ```
 
-The frames go out back to back: each starts 3.5 ms after the previous one ends
-(start delay and margins), as the queue keeps a frame's airtime blocked until it is
-sent. The airtime counts against
+The frames go out back to back: each starts 8 ms after the previous one ends
+(handover to the radio, `lgw_send`, start delay and margins), as the queue keeps a
+frame's airtime blocked until it is sent. The airtime counts against
 its sub-band for an hour (`duty_cycle_stats` in `event/stats`); a reboot clears it.
 
 ## Radio
@@ -371,7 +373,16 @@ with a valid CRC. After each poll core 1 also reads the SX1302 counter, and the
 downlink queue extrapolates from that read with the RP2350 timer, so Class A delays
 count on the clock the uplink's `count_us` came from.
 
-`radio` on the console shows the state, probe result, EUI and frame counters;
+Downlinks go out on radio 0 (863–870 MHz) with the TX gain table of the same Semtech
+config (12–27 dBm at the module's connector; the HAL takes the highest entry not
+above the requested power, so a request below 12 dBm is refused with `TX_POWER`).
+About 30 ms before its start the downlink task hands the frame to core 1, which loads
+it into the SX1302 between polls (`lgw_send`, timestamped) and reports back when the
+TX modem is free again; only then does the queue release the frame's airtime. A frame
+that could not be loaded in time is aborted and logged as not sent.
+
+`radio` on the console shows the state, probe result, EUI, RX and TX counters and the
+longest `lgw_send` so far;
 `radio restart` power-cycles the module and starts again, handy while rewiring. A
 version of `0x00` or `0xff` means MISO floats or the module has no power;
 `page register failed` with a plausible version points at MOSI or CS;

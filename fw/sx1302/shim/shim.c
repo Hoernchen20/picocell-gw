@@ -24,10 +24,13 @@
 
 #include "pc.h"
 
-_Static_assert(sizeof(struct pc_conf) == 160, "pc_conf layout");
-_Static_assert(offsetof(struct pc_conf, clksrc) == 159, "pc_conf layout");
+_Static_assert(sizeof(struct pc_conf) == 228, "pc_conf layout");
+_Static_assert(offsetof(struct pc_conf, tx_gain_size) == 224, "pc_conf layout");
+_Static_assert(PC_TX_GAIN_MAX == TX_GAIN_LUT_SIZE_MAX, "pc_conf layout");
 _Static_assert(sizeof(struct pc_rx) == 288, "pc_rx layout");
 _Static_assert(offsetof(struct pc_rx, payload) == 32, "pc_rx layout");
+_Static_assert(sizeof(struct pc_tx) == 280, "pc_tx layout");
+_Static_assert(offsetof(struct pc_tx, payload) == 24, "pc_tx layout");
 
 #define READ_ACCESS 0x00
 #define WRITE_ACCESS 0x80
@@ -491,6 +494,26 @@ int pc_start(const struct pc_conf *c, uint64_t *eui) {
         }
     }
 
+    for (uint8_t i = 0; i < 2; i++) {
+        if (!c->radio[i].tx_enable) {
+            continue;
+        }
+        struct lgw_tx_gain_lut_s lut;
+        memset(&lut, 0, sizeof lut);
+        lut.size = c->tx_gain_size;
+        for (uint8_t j = 0; j < c->tx_gain_size && j < PC_TX_GAIN_MAX; j++) {
+            lut.lut[j].rf_power = c->tx_gain[j].rf_power;
+            lut.lut[j].pa_gain = c->tx_gain[j].pa_gain;
+            lut.lut[j].pwr_idx = c->tx_gain[j].pwr_idx;
+            /* SX1257 only, but range-checked anyway; lora_pkt_fwd's values for SX1250. */
+            lut.lut[j].dac_gain = 3;
+            lut.lut[j].mix_gain = 5;
+        }
+        if (lgw_txgain_setconf(i, &lut) != LGW_HAL_SUCCESS) {
+            return PC_ERR_TXGAIN;
+        }
+    }
+
     struct lgw_conf_demod_s demod = {.multisf_datarate = c->multi_sf_mask};
     if (lgw_demod_setconf(&demod) != LGW_HAL_SUCCESS) {
         return PC_ERR_DEMOD;
@@ -596,4 +619,33 @@ int pc_receive(struct pc_rx *out, uint8_t max) {
         memcpy(o->payload, p->payload, p->size <= sizeof o->payload ? p->size : sizeof o->payload);
     }
     return n;
+}
+
+int pc_send(const struct pc_tx *tx) {
+    static struct lgw_pkt_tx_s pkt;
+    memset(&pkt, 0, sizeof pkt);
+    pkt.freq_hz = tx->freq_hz;
+    pkt.tx_mode = TIMESTAMPED;
+    pkt.count_us = tx->count_us;
+    pkt.rf_chain = tx->rf_chain;
+    pkt.rf_power = tx->rf_power;
+    pkt.modulation = MOD_LORA;
+    pkt.bandwidth = bandwidth_code(tx->bandwidth_hz);
+    pkt.datarate = tx->sf;
+    pkt.coderate = tx->coderate;
+    pkt.invert_pol = tx->invert_pol;
+    pkt.preamble = tx->preamble;
+    pkt.no_crc = !tx->crc;
+    pkt.size = tx->size <= sizeof pkt.payload ? tx->size : sizeof pkt.payload;
+    memcpy(pkt.payload, tx->payload, pkt.size);
+    return lgw_send(&pkt) == LGW_HAL_SUCCESS ? 0 : -1;
+}
+
+int pc_tx_status(uint8_t rf_chain) {
+    uint8_t code;
+    return lgw_status(rf_chain, TX_STATUS, &code) == LGW_HAL_SUCCESS ? code : -1;
+}
+
+int pc_tx_abort(uint8_t rf_chain) {
+    return lgw_abort_tx(rf_chain) == LGW_HAL_SUCCESS ? 0 : -1;
 }

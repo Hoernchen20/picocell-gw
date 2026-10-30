@@ -715,6 +715,11 @@ async fn radio_status(o: &mut Out<'_>) -> Result<(), Gone> {
     }
     if s.state == radio::State::Running {
         out!(o, "rx {} frames ok, {} with crc errors\r\n", s.rx_ok, s.rx_bad)?;
+        out!(o, "tx {} frames sent, {} not sent", s.tx_ok, s.tx_failed)?;
+        if s.tx_ok + s.tx_failed > 0 {
+            out!(o, ", lgw_send up to {} µs", s.tx_load_max_us)?;
+        }
+        o.write(b"\r\n").await?;
     }
     Ok(())
 }

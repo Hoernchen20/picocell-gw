@@ -989,14 +989,30 @@ Milestones:
   requires the STTS751 temperature sensor (scans I2C 0x39, 0x3B, 0x38) and fails
   without it; it is on the module, on I2C0 GP4/GP5. Frames with a valid CRC are
   published as `UplinkFrame` (LoRa only); the downlink queue runs on the SX1302
-  counter, read after each 10 ms poll and extrapolated with the RP2350 timer. Still
-  open: `lgw_send`, TX gain LUT, SPI clock above 2 MHz.
+  counter, read after each 10 ms poll and extrapolated with the RP2350 timer. TX:
+  core 0 leaves the frame due next in a one-frame mailbox; core 1 checks it every
+  200 µs between polls, loads it with `lgw_send` (timestamped, the HAL subtracts its
+  start delay), polls `lgw_status` from the frame's computed end until TX_FREE and
+  answers core 0, which only then releases the airtime in the queue. A frame loaded
+  after its trigger time stays TX_SCHEDULED (it would go out after the counter
+  wraps) and is aborted, as is one still on air 100 ms after its end. Tested on the
+  desk: SF12 and SF7/SF10 frames on 869.525 MHz at 14 dBm, `lgw_send` 1.94 ms at
+  2 MHz SPI. Still open: SPI clock above 2 MHz.
+- Desk setup (Pi HAT): GP15 → HAT pin 12 switches nothing, so `radio restart` and a
+  Pico reboot rely on the SX1302 reset alone (on the PCB, GP15 switches the buck).
+  That is enough with GP14 on HAT pin 11; with the reset not connected, the next
+  `lgw_start` after the HAL has run fails (SX1250 standby) or SPI reads garbage until
+  the module loses power. The probe checks the reset (page register back to 0).
 - JIT queue (own implementation, the HAL has none): 32-bit `count_us` wrap
   (~71 min), mapping "Immediately" to a timestamped TX with margin (as Concentratord
   does), `context` encoding in uplinks so ChirpStack echoes it back, collision and
   too-late checks.
-- Radio calibration: extract `rssi_offset` and the TX gain LUT from Seeed's
-  `global_conf.json.sx1250.EU868`; define the TX power cap on USB power (or no TX).
+- Radio calibration: `rssi_offset` and the TX gain LUT (12–27 dBm, 16 entries) from
+  `global_conf.json.sx1250.EU868` of sx1302_hal V2.1.0, in `sx1302::Conf::EU868`.
+  The HAL sends at the highest entry not above the requested power and at 12 dBm
+  for anything below, so frames below 12 dBm get `TX_POWER`. The power is taken as
+  conducted (no antenna gain subtracted, as lora_pkt_fwd's default). Still open: the
+  TX power cap on USB power (or no TX), via the TPS2116 ST pin on GP27.
 - USB console protocol: done. One CDC-ACM
   port for log and commands (`fw/src/console.rs`, logic host-tested in
   `fw/console`). 8 KB RAM log history replayed when a terminal opens the port (any
@@ -1045,13 +1061,17 @@ Milestones:
   delay and 1 ms margins around each frame's airtime, "Immediately" in the first free
   slot. The radio task takes a frame 30 ms before its start; its airtime stays blocked
   until the radio task reports it done, so frames queued meanwhile go after it.
-  With the radio: the next frame is handed over only after TX done, 2.5–3.5 ms before
-  its start when frames are back to back; check that `lgw_send` makes that, else
-  widen the gap. `DownlinkFrame` items are
+  With the radio: the next frame is handed over only after TX done. Back to back,
+  that took ~1.3 ms, plus 1.94 ms for `lgw_send`, plus the 1.5 ms start delay: more
+  than the 2.5 ms first reserved before each frame (frame dropped on the desk). The
+  queue now reserves handover 1.5 ms + `lgw_send` 3 ms + start delay + margin, so
+  back-to-back frames start 8 ms apart (desk: 4.3–4.8 ms lead left after loading);
+  the radio loads a frame only with at least `lgw_send` + start delay of lead.
+  Raising the SPI clock would shrink that. `DownlinkFrame` items are
   tried in order, the first accepted one is OK and the rest IGNORED; GPS epoch →
   `GPS_UNLOCKED`, non-LoRa or other code rates → `INTERNAL_ERROR`, outside
-  863–870 MHz → `TX_FREQ`, above 27 dBm → `TX_POWER`. Until `lgw_send` is there,
-  frames are logged at their start; while the concentrator is not running, the RP2350
+  863–870 MHz → `TX_FREQ`, above 27 dBm or below 12 dBm → `TX_POWER`. While the
+  concentrator is not running, frames are logged at their start; the RP2350
   timer stands in for the SX1302 counter and dev builds send test uplinks, which
   `tools/test-downlink.sh` answers like a Class A downlink.
 - Duty cycle: `fw/jit` `duty`, ETSI EN 300 220-2 / ERC 70-03 sub-bands 863–865 (0.1 %),
