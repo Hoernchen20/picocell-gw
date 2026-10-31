@@ -997,7 +997,8 @@ Milestones:
   after its trigger time stays TX_SCHEDULED (it would go out after the counter
   wraps) and is aborted, as is one still on air 100 ms after its end. Tested on the
   desk: SF12 and SF7/SF10 frames on 869.525 MHz at 14 dBm, `lgw_send` 1.94 ms at
-  2 MHz SPI. Still open: SPI clock above 2 MHz.
+  2 MHz SPI. SPI now at 7.5 MHz (8 MHz requested, 150 MHz clk_peri): `lgw_send`
+  875–888 µs on the desk.
 - Desk setup (Pi HAT): GP15 → HAT pin 12 switches nothing, so `radio restart` and a
   Pico reboot rely on the SX1302 reset alone (on the PCB, GP15 switches the buck).
   That is enough with GP14 on HAT pin 11; with the reset not connected, the next
@@ -1011,8 +1012,11 @@ Milestones:
   `global_conf.json.sx1250.EU868` of sx1302_hal V2.1.0, in `sx1302::Conf::EU868`.
   The HAL sends at the highest entry not above the requested power and at 12 dBm
   for anything below, so frames below 12 dBm get `TX_POWER`. The power is taken as
-  conducted (no antenna gain subtracted, as lora_pkt_fwd's default). Still open: the
-  TX power cap on USB power (or no TX), via the TPS2116 ST pin on GP27.
+  conducted (no antenna gain subtracted, as lora_pkt_fwd's default). On USB power
+  (TPS2116 ST low on GP27, read per frame) the TX task caps the power at 14 dBm
+  instead of refusing the frame, since ChirpStack asks for 16 dBm (27 dBm on
+  869.525 MHz) and Class A would otherwise not work on the desk. GP27 has the
+  internal pull-down, so without the connector PCB the board counts as on USB.
 - USB console protocol: done. One CDC-ACM
   port for log and commands (`fw/src/console.rs`, logic host-tested in
   `fw/console`). 8 KB RAM log history replayed when a terminal opens the port (any
@@ -1064,10 +1068,11 @@ Milestones:
   With the radio: the next frame is handed over only after TX done. Back to back,
   that took ~1.3 ms, plus 1.94 ms for `lgw_send`, plus the 1.5 ms start delay: more
   than the 2.5 ms first reserved before each frame (frame dropped on the desk). The
-  queue now reserves handover 1.5 ms + `lgw_send` 3 ms + start delay + margin, so
-  back-to-back frames start 8 ms apart (desk: 4.3–4.8 ms lead left after loading);
+  queue now reserves handover 1.5 ms + `lgw_send` 1.5 ms (0.9 ms measured at 7.5 MHz
+  SPI, 3 ms while at 2 MHz) + start delay + margin, so back-to-back frames start
+  6.5 ms apart (at 2 MHz with 3 ms: 4.3–4.8 ms lead left after loading);
   the radio loads a frame only with at least `lgw_send` + start delay of lead.
-  Raising the SPI clock would shrink that. `DownlinkFrame` items are
+  `DownlinkFrame` items are
   tried in order, the first accepted one is OK and the rest IGNORED; GPS epoch →
   `GPS_UNLOCKED`, non-LoRa or other code rates → `INTERNAL_ERROR`, outside
   863–870 MHz → `TX_FREQ`, above 27 dBm or below 12 dBm → `TX_POWER`. While the

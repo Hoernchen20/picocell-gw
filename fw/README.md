@@ -338,7 +338,7 @@ tools/test-classc.sh <gateway-id> 1 868850000 12 20    # TX_POWER (16 dBm there)
 tools/test-classc.sh <gateway-id> 1 868650000          # TX_FREQ (between sub-bands)
 ```
 
-The frames go out back to back: each starts 8 ms after the previous one ends
+The frames go out back to back: each starts 6.5 ms after the previous one ends
 (handover to the radio, `lgw_send`, start delay and margins), as the queue keeps a
 frame's airtime blocked until it is sent. The airtime counts against
 its sub-band for an hour (`duty_cycle_stats` in `event/stats`); a reboot clears it.
@@ -351,7 +351,7 @@ code. The HAL blocks for seconds while it starts and polls the SX1302 over SPI, 
 runs on core 1; flash writes park core 1 in RAM meanwhile.
 
 At boot core 1 switches the WM1302 on (GP15), resets the SX1302 (GP14, active high)
-and probes it over SPI1 at 2 MHz (GP10 SCK, GP11 MOSI, GP12 MISO, GP13 CS): version
+and probes it over SPI1 at 7.5 MHz (GP10 SCK, GP11 MOSI, GP12 MISO, GP13 CS): version
 register, and a write and read-back of the page register, which needs all four SPI
 lines. Then `lgw_start` loads the AGC/ARB firmware, calibrates both SX1250s and
 switches the SX1302 to their 32 MHz clock, with the EU868 channel plan of Semtech's
@@ -376,6 +376,9 @@ count on the clock the uplink's `count_us` came from.
 Downlinks go out on radio 0 (863–870 MHz) with the TX gain table of the same Semtech
 config (12–27 dBm at the module's connector; the HAL takes the highest entry not
 above the requested power, so a request below 12 dBm is refused with `TX_POWER`).
+On USB power (TPS2116 ST low on GP27) frames go out at 14 dBm at most and the TX log
+line says `(USB power)`; GP27 has a pull-down, so a board without the connector PCB
+(desk setup) counts as on USB.
 About 30 ms before its start the downlink task hands the frame to core 1, which loads
 it into the SX1302 between polls (`lgw_send`, timestamped) and reports back when the
 TX modem is free again; only then does the queue release the frame's airtime. A frame

@@ -5,6 +5,10 @@
 //! concentrator is not running. The TX task hands each frame to the radio
 //! (`radio::transmit`); while the concentrator is not running it logs the frame at its
 //! start time instead.
+//!
+//! On USB power (TPS2116 ST low on GP27, sketch.md section 2.4) frames go out at no more
+//! than `USB_MAX_DBM`; the pull-down makes a board without the connector PCB count as
+//! on USB.
 
 use core::cell::RefCell;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -13,6 +17,7 @@ use chirpstack::gw::TxAckStatus;
 use chirpstack::Timing;
 use critical_section::Mutex;
 use embassy_futures::select::{Either, select};
+use embassy_rp::gpio::Input;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::signal::Signal;
 use embassy_time::{Instant, Timer};
@@ -22,6 +27,9 @@ use jit::{At, Queue};
 use log::{info, warn};
 
 use crate::radio::{self, TxError};
+
+/// TX power cap while the board runs on USB VBUS (500 mA budget); as on the desk.
+const USB_MAX_DBM: i32 = 14;
 
 /// A frame waiting for its start time.
 struct Tx {
@@ -220,8 +228,8 @@ fn schedule(id: u32, i: usize, item: &chirpstack::gw::DownlinkFrameItem) -> TxAc
     }
 }
 
-/// The frame for the HAL, starting at `start`.
-fn radio_tx(start: u32, tx: &Tx) -> sx1302::Tx {
+/// The frame for the HAL, starting at `start`, at `power` dBm.
+fn radio_tx(start: u32, tx: &Tx, power: i32) -> sx1302::Tx {
     let mut r = sx1302::Tx::EMPTY;
     r.freq_hz = tx.frequency;
     r.count_us = start;
@@ -230,8 +238,8 @@ fn radio_tx(start: u32, tx: &Tx) -> sx1302::Tx {
     r.sf = tx.spreading_factor as u8;
     r.preamble = tx.preamble as u16;
     r.coderate = tx.code_rate as u8;
-    // Within the gain table, checked by `schedule`.
-    r.rf_power = tx.power as i8;
+    // Within the gain table, checked by `schedule`; the USB cap is in it too.
+    r.rf_power = power as i8;
     r.invert_pol = tx.invert_polarity;
     r.crc = tx.crc;
     // At most 255 bytes, checked by `schedule`.
@@ -239,9 +247,10 @@ fn radio_tx(start: u32, tx: &Tx) -> sx1302::Tx {
     r
 }
 
-/// Takes each frame from the queue `jit::HANDOVER_US` before its start.
+/// Takes each frame from the queue `jit::HANDOVER_US` before its start. `on_vbus` is the
+/// TPS2116 ST input (GP27, low on USB).
 #[embassy_executor::task]
-pub async fn tx_task() -> ! {
+pub async fn tx_task(on_vbus: Input<'static>) -> ! {
     loop {
         let Some(start) = critical_section::with(|cs| SCHEDULER.borrow_ref(cs).queue.next_start()) else {
             QUEUED.wait().await;
@@ -264,7 +273,9 @@ pub async fn tx_task() -> ! {
             critical_section::with(|cs| SCHEDULER.borrow_ref_mut(cs).queue.tx_done());
             continue;
         }
-        let sent = match radio::transmit(radio_tx(start, &tx), tx.airtime_us).await {
+        // Read per frame: the 24 V input can come and go.
+        let power = if on_vbus.is_low() { tx.power.min(USB_MAX_DBM) } else { tx.power };
+        let sent = match radio::transmit(radio_tx(start, &tx, power), tx.airtime_us).await {
             Ok(()) => Ok("TX"),
             // Not running when the frame was queued either: the timer stood in for its
             // counter, so the start is still right.
@@ -284,10 +295,10 @@ pub async fn tx_task() -> ! {
             Ok(what) => {
                 TX_EMITTED.fetch_add(1, Ordering::Relaxed);
                 info!(
-                    "downlink {}: {what} at count_us {start}: {} Hz, {} dBm, SF{} BW{} CR4/{}{}, preamble {}{}, {} B",
+                    "downlink {}: {what} at count_us {start}: {} Hz, {power} dBm{}, SF{} BW{} CR4/{}{}, preamble {}{}, {} B",
                     tx.downlink_id,
                     tx.frequency,
-                    tx.power,
+                    if power < tx.power { " (USB power)" } else { "" },
                     tx.spreading_factor,
                     tx.bandwidth / 1000,
                     tx.code_rate + 4,

@@ -45,8 +45,9 @@ const REG_PAGE: u16 = 0x5600;
 /// COMMON_VERSION_VERSION (read-only).
 const REG_VERSION: u16 = 0x5606;
 const MUX_SX1302: u8 = 0x00;
-/// The HAL's Linux default (`SPI_SPEED`); fine over jumper wires.
-const SPI_HZ: u32 = 2_000_000;
+/// 7.5 MHz from the 150 MHz clk_peri (the divider rounds down), against 2 MHz in the
+/// HAL's Linux default (`SPI_SPEED`): shortens `lgw_send` and the gap between frames.
+const SPI_HZ: u32 = 8_000_000;
 /// As lora_pkt_fwd polls `lgw_receive`.
 const POLL: Duration = Duration::from_millis(10);
 /// Between polls core 1 checks this often for a frame to send and for the end of the one

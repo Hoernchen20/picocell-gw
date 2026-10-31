@@ -15,8 +15,9 @@ use heapless::Vec;
 pub const TX_START_DELAY_US: u32 = 1_500;
 /// Guard time around each frame.
 pub const TX_MARGIN_US: u32 = 1_000;
-/// Upper bound for loading a frame into the SX1302 (`lgw_send`, ~1.9 ms at 2 MHz SPI).
-pub const LGW_SEND_US: u32 = 3_000;
+/// Upper bound for loading a frame into the SX1302 (`lgw_send`, 875-888 µs measured at
+/// 7.5 MHz SPI).
+pub const LGW_SEND_US: u32 = 1_500;
 /// From the end of one frame until the radio task has the next one: the radio sees
 /// the TX modem free, the queue hands over the next frame (~1.3 ms measured).
 pub const TX_HANDOFF_US: u32 = 1_500;

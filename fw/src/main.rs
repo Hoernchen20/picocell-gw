@@ -216,5 +216,5 @@ async fn main(spawner: Spawner) {
     spawner.spawn(radio::uplink_task(ids.gateway_id.as_str()).unwrap());
     #[cfg(not(feature = "production"))]
     spawner.spawn(test_uplink_task(ids.gateway_id.as_str()).unwrap());
-    spawner.spawn(downlink::tx_task().unwrap());
+    spawner.spawn(downlink::tx_task(Input::new(p.PIN_27, Pull::Down)).unwrap());
 }
