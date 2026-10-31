@@ -743,7 +743,8 @@ async fn status(o: &mut Out<'_>, ctx: &Context, pending: &Settings) -> Result<()
         let left = boot::BUY_DEADLINE_S.saturating_sub(up);
         out!(o, "trial      OTA image not bought yet: needs the broker within {left} s, else the old image boots\r\n")?;
     }
-    out!(o, "gateway id {}\r\n", ctx.ids.gateway_id)?;
+    let source = if ctx.ids.from_eui { "SX1302 EUI" } else { "chip ID, the concentrator did not start" };
+    out!(o, "gateway id {} ({source})\r\n", ctx.ids.gateway_id)?;
     out!(o, "radio      {}\r\n", radio::status().state)?;
     match cfg.missing() {
         None => o.write(b"config     stored").await?,

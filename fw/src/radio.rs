@@ -32,7 +32,7 @@ use embassy_rp::spi::{self, Blocking, Spi};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_sync::signal::Signal;
-use embassy_time::{Duration, Instant, block_for};
+use embassy_time::{Duration, Instant, Timer, block_for};
 use log::{info, warn};
 use static_cell::ConstStaticCell;
 use sx1302::{Bus, BusError, Concentrator, Conf, Crc, Data, Modulation, Packet, Tx, TxStatus};
@@ -319,6 +319,18 @@ fn set_counter(c: Option<(u32, Instant)>) {
 /// `GatewayStats`.
 pub fn take_counters() -> (u32, u32) {
     (RX_RECEIVED.swap(0, Ordering::Relaxed), RX_OK.swap(0, Ordering::Relaxed))
+}
+
+/// The EUI from the first start once that is over, `None` if it failed: about a
+/// second after `start`, for the gateway ID.
+pub async fn first_eui() -> Option<u64> {
+    loop {
+        let s = status();
+        if s.starts > 0 && s.state != State::Starting {
+            return s.eui;
+        }
+        Timer::after_millis(10).await;
+    }
 }
 
 /// Asks core 1 to stop the HAL, power-cycle the module and start again.

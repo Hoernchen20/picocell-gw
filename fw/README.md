@@ -281,9 +281,14 @@ PBKDF2-HMAC-SHA256 (10000 iterations, random salt, `iterations$salt$hash`; such 
 hash can also be given as the value). Forgotten password: `erase` works without login
 and deletes the whole config, MQTT password included, so the board has to be
 provisioned again.
- MAC and gateway ID are
-derived from the RP2350 chip ID, so several boards can share a network; the boot
-message and `status` show them. Register each board with the broker using that ID:
+ The MAC is
+derived from the RP2350 chip ID, so several boards can share a network. The gateway
+ID is the SX1302 EUI, which is only known once `lgw_start` is through: the firmware
+waits for the first concentrator start (about a second, at most 10 s) before it
+opens the console and goes online. If the concentrator does not start, the gateway
+ID falls back to the chip ID, with a warning in the log and in `status`; the broker
+then refuses that ID until the radio works again and the board restarts. The boot
+message and `status` show both. Register each board with the broker using that ID:
 
 ```sh
 tools/test-broker/add-gateway.sh <gateway-id>

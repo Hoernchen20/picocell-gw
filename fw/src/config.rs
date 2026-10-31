@@ -6,9 +6,9 @@
 //! the new password next to them until the broker has accepted it.
 //!
 //! The key comes from `config_key`: in dev builds derived from the chip ID, which
-//! anyone holding the board can read (it is also the gateway ID), so that only keeps
-//! the secrets out of a plain flash dump; in production builds from a random key in
-//! OTP (sketch.md section 4.2). Without a key nothing can be stored.
+//! anyone holding the board can read, so that only keeps the secrets out of a plain
+//! flash dump; in production builds from a random key in OTP (sketch.md section 4.2).
+//! Without a key nothing can be stored.
 //!
 //! The partition lies behind the two 988 KB slots, so flashing firmware keeps it. All
 //! access goes through ROM `flash_op` (`crate::flash`): with the A/B partition table XIP

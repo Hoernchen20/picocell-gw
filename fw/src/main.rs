@@ -39,9 +39,9 @@ use embassy_rp::trng::Trng;
 use embassy_rp::usb::Driver;
 use embassy_rp::watchdog::Watchdog;
 use embassy_rp::{bind_interrupts, dma, trng, usb};
-use embassy_time::Delay;
+use embassy_time::{Delay, Duration, with_timeout};
 use embedded_hal_bus::spi::ExclusiveDevice;
-use log::info;
+use log::{info, warn};
 use panic_halt as _;
 use static_cell::StaticCell;
 use wire::time::Utc;
@@ -136,16 +136,6 @@ async fn main(spawner: Spawner) {
 
     tls::init_rng(Trng::new(p.TRNG, Irqs, Default::default()));
 
-    static IDS: StaticCell<Ids> = StaticCell::new();
-    let ids: &'static Ids = IDS.init(Ids::read());
-    let m = ids.mac;
-    info!(
-        "picocell-gw {}, built {}, gateway id {}, mac {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-        env!("CARGO_PKG_VERSION"),
-        Utc(config::build_time()),
-        ids.gateway_id, m[0], m[1], m[2], m[3], m[4], m[5]
-    );
-
     boot::start();
     spawner.spawn(boot::watchdog_task(Watchdog::new(p.WATCHDOG)).unwrap());
     config::init().await;
@@ -154,6 +144,21 @@ async fn main(spawner: Spawner) {
         p.SPI1, p.PIN_10, p.PIN_11, p.PIN_12, p.PIN_13, p.PIN_14, p.PIN_15, p.I2C0, p.PIN_4, p.PIN_5,
     );
     radio::start(p.CORE1, radio);
+    // The gateway ID is the SX1302 EUI, known once lgw_start is through.
+    let eui = with_timeout(Duration::from_secs(10), radio::first_eui()).await.ok().flatten();
+
+    static IDS: StaticCell<Ids> = StaticCell::new();
+    let ids: &'static Ids = IDS.init(Ids::read(eui));
+    let m = ids.mac;
+    info!(
+        "picocell-gw {}, built {}, gateway id {}, mac {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        env!("CARGO_PKG_VERSION"),
+        Utc(config::build_time()),
+        ids.gateway_id, m[0], m[1], m[2], m[3], m[4], m[5]
+    );
+    if !ids.from_eui {
+        warn!("no SX1302 EUI, gateway id falls back to the chip ID");
+    }
 
     let usb = Driver::new(p.USB, Irqs);
     if !config::provisioned() || boot::refuse_online().is_some() {
