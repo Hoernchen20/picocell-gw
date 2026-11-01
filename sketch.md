@@ -980,8 +980,6 @@ Done items are described in `fw/README.md` and the commit history.
 - `embedded-tls`: move from the pinned git rev to the first release after 0.19.0
   once it is out; review upstream changes before bumping the rev.
 - Config keys not yet implemented: `net.mac`, radio keys, `location`.
-- MQTT: a refused SUBACK is untested (Mosquitto's `acl_file` grants denied
-  subscriptions).
 - Whether to support `command/config`.
 - FUOTA test (needs ChirpStack and a device). The duty cycle keeps no reservation for
   Class A RX2 in the 869.4–869.65 MHz band, so a FUOTA burst can block RX2 for up

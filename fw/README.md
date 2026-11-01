@@ -332,7 +332,14 @@ the Ethernet link down (polled every 500 ms, so a pulled cable ends it within a
 second). Without a link the next attempt waits for it. Reconnect attempts wait 1 s,
 doubling up to 60 s, each plus up to 25 % at random. The wait goes back to 1 s only after a session of at least 60 s, so a
 broker that accepts and drops the gateway again is not hammered. `status` shows
-`disconnected, retrying` meanwhile, the LED 2 blinks.
+`disconnected, retrying` meanwhile, the LED 2 blinks. A session that ends is closed
+with a TCP reset and no DISCONNECT, so the broker drops it at once and publishes the
+OFFLINE will.
+
+Mosquitto's `acl_file` grants every subscription (it filters on delivery), so the
+refused-SUBACK path needs [../tools/test-broker/refuse-suback.py](../tools/test-broker/refuse-suback.py)
+instead of Mosquitto (same port and certificate). The script refuses `command/down`
+on the first three connections and grants everything after that.
 
 ## Downlink test
 

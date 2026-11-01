@@ -29,7 +29,7 @@ use embassy_net::tcp::TcpSocket;
 use embassy_net::Stack;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
-use embassy_time::{Duration, Instant, Ticker, Timer};
+use embassy_time::{Duration, Instant, Ticker, Timer, with_timeout};
 use embedded_tls::{TlsConfig, TlsConnection, TlsContext};
 use log::{info, warn};
 use jit::duty::{self, EU868};
@@ -76,6 +76,11 @@ const TLS_RX: usize = 16640;
 pub struct Buffers {
     tcp_rx: [u8; 4352],
     tcp_tx: [u8; 4352],
+    session: SessionBuffers,
+}
+
+/// The ones above the socket, borrowed by `run()` while `session()` keeps the socket.
+struct SessionBuffers {
     tls_rx: [u8; TLS_RX],
     tls_tx: [u8; 4352],
     mqtt: [u8; MAX_PACKET as usize],
@@ -86,9 +91,11 @@ impl Buffers {
         Self {
             tcp_rx: [0; 4352],
             tcp_tx: [0; 4352],
-            tls_rx: [0; TLS_RX],
-            tls_tx: [0; 4352],
-            mqtt: [0; MAX_PACKET as usize],
+            session: SessionBuffers {
+                tls_rx: [0; TLS_RX],
+                tls_tx: [0; 4352],
+                mqtt: [0; MAX_PACKET as usize],
+            },
         }
     }
 }
@@ -250,6 +257,31 @@ async fn session(
         }
     };
 
+    let mut socket = TcpSocket::new(stack, &mut bufs.tcp_rx, &mut bufs.tcp_tx);
+    // Also bounds poll_body(): never wrap MQTT reads in a timeout (not cancel-safe).
+    socket.set_timeout(Some(Duration::from_secs(u64::from(KEEP_ALIVE_S) * 3)));
+    socket.connect((addr, port)).await.map_err(|_| "tcp connect failed")?;
+    let result = run(&mut socket, stack, ca_slot, new, gateway_id, &mut bufs.session, ota).await;
+    // Dropping the socket sends nothing, and the broker would keep the session (and
+    // hold back the will) until the keep-alive runs out or the gateway is back. A
+    // reset ends it now; the will goes out as no DISCONNECT came first.
+    socket.abort();
+    let _ = with_timeout(Duration::from_secs(1), socket.flush()).await;
+    result
+}
+
+/// The TLS and MQTT session on the connected `socket`; returns when it ends.
+async fn run(
+    socket: &mut TcpSocket<'_>,
+    stack: Stack<'static>,
+    ca_slot: usize,
+    new: Option<&str>,
+    gateway_id: &str,
+    bufs: &mut SessionBuffers,
+    ota: &mut ota::Receiver,
+) -> Result<(), &'static str> {
+    let cfg = config::get();
+    let host = cfg.mqtt_host();
     let state_topic = topic(gateway_id, "state/conn");
     let up_topic = topic(gateway_id, "event/up");
     let stats_topic = topic(gateway_id, "event/stats");
@@ -261,11 +293,6 @@ async fn session(
     let ota_report_topic = topic(gateway_id, "state/ota");
     let ca_topic = topic(gateway_id, "command/ca");
     let ca_report_topic = topic(gateway_id, "state/ca");
-
-    let mut socket = TcpSocket::new(stack, &mut bufs.tcp_rx, &mut bufs.tcp_tx);
-    // Also bounds poll_body(): never wrap MQTT reads in a timeout (not cancel-safe).
-    socket.set_timeout(Some(Duration::from_secs(u64::from(KEEP_ALIVE_S) * 3)));
-    socket.connect((addr, port)).await.map_err(|_| "tcp connect failed")?;
 
     let tls_config = TlsConfig::new().with_server_name(host);
     let mut tls: TlsConnection<'_, _, Suite> =
@@ -556,7 +583,6 @@ async fn session(
             }
         }
     }
-    // Dropping the client closes the socket; the broker then publishes the will.
     Ok(())
 }
 
