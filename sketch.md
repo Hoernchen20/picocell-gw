@@ -977,8 +977,6 @@ Milestones:
 
 - `embedded-tls`: move from the pinned git rev to the first release after 0.19.0
   once it is out; review upstream changes before bumping the rev.
-- MQTT reconnect handling (backoff, re-subscribe, ONLINE republish) and running the
-  `rust-mqtt` + TLS stack on the W5500-EVB-Pico2 against a real broker.
 - `sx1302_hal` port: done for RX in `fw/sx1302`. Upstream Lora-net V2.1.0, unmodified
   (Seeed's WM1302 instructions build it as is; no Seeed fork). `shim/shim.c` replaces
   `loragw_spi.c`, the `*_spi.c` radio files and `loragw_i2c.c` with Rust callbacks,
@@ -1050,6 +1048,14 @@ Milestones:
   core 1 restarts the module (open SPI lines are caught within ~100 ms). A module that
   does not answer is not probed again until `radio restart`; an automatic retry is
   still open.
+- MQTT reconnect handling: done, see `fw/README.md` (MQTT connection). Each attempt
+  starts a clean session (resolve, TLS, CONNECT, ONLINE, all subscriptions). Backoff
+  1 s doubling to 60 s with up to 25 % jitter, reset only after a session of at least
+  60 s. A missing PINGRESP ends the session after 20–40 s, a refused SUBACK at once;
+  the OTA trial is bought once all four SUBACKs are granted. Tested on the board
+  against Mosquitto (frozen broker, stopped broker). Mosquitto's `acl_file` grants
+  denied subscriptions, so the refused SUBACK is untested. A pulled cable is still
+  noticed by the TCP timeout (90 s).
 - Stats interval and contents; whether to support `command/config`.
 - Watchdog: settled in 8b (8 s, fed every second by its own task, so it catches a
   stalled executor but not a single stuck task). Core 1 runs the radio and is not

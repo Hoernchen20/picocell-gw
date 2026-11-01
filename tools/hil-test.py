@@ -316,9 +316,11 @@ def main():
                     "uptime", "mqtt"):
             if key not in s:
                 fail(f"status has no {key} line")
-        if not re.fullmatch(r"[0-9a-f]{16}", s["gateway id"]):
+        # The ID, then where it comes from: "(SX1302 EUI)" or "(chip ID)".
+        m = re.fullmatch(r"([0-9a-f]{16})(?: \(.+\))?", s["gateway id"])
+        if not m:
             fail(f"gateway id {s['gateway id']!r}")
-        state["id"] = s["gateway id"]
+        state["id"] = m.group(1)
         key = s.get("config key", "")
         if "dev build" in s["security"] and not re.fullmatch(r"chip ID \(dev build\); OTP page \d+ empty, soft-locked", key):
             fail(f"config key {key!r}")

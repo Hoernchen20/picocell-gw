@@ -14,7 +14,7 @@
 //!
 //! Firmware update (sketch.md section 8.1, 8b): messages on `command/ota` go to
 //! `ota::Receiver`, answers to `state/ota`. An OTA trial image is bought once the
-//! subscriptions are up, so it can take the next update.
+//! broker has granted all subscriptions, so it can take the next update.
 //!
 //! CA rotation (sketch.md section 8.1, 8e): signed updates on `command/ca` go to
 //! `ca_update`, answers to `state/ca`. A session that only came up with `tls.ca1`
@@ -29,7 +29,7 @@ use embassy_net::tcp::TcpSocket;
 use embassy_net::Stack;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
-use embassy_time::{Duration, Ticker, Timer};
+use embassy_time::{Duration, Instant, Ticker, Timer};
 use embedded_tls::{TlsConfig, TlsConnection, TlsContext};
 use log::{info, warn};
 use jit::duty::{self, EU868};
@@ -44,13 +44,22 @@ use rust_mqtt::types::{MqttBinary, MqttString, ReasonCode, TopicFilter, TopicNam
 
 use wire::time::Utc;
 
-use crate::tls::{FailClosed, Suite};
+use crate::tls::{self, FailClosed, Suite};
 use crate::{boot, ca_update, clock, config, config_key, downlink, ota, radio, resolve};
 
 const KEEP_ALIVE_S: u16 = 30;
 const MAX_PACKET: u32 = 8192;
 /// ChirpStack's default `stats_interval`.
 const STATS_INTERVAL_S: u64 = 30;
+/// Reconnect backoff: doubles from 1 s up to this, plus up to a quarter at random so
+/// gateways do not all come back at once after a broker restart.
+const BACKOFF_MAX_S: u64 = 60;
+/// A session at least this long resets the backoff; a shorter one (broker accepts and
+/// drops again, e.g. an ACL) keeps it growing.
+const STABLE_S: u64 = 60;
+/// One SUBSCRIBE each for `command/down`, `command/credentials`, `command/ota`,
+/// `command/ca`.
+const SUBSCRIPTIONS: usize = 4;
 
 /// An encoded `UplinkFrame` (or other event) waiting to be published.
 pub struct Uplink {
@@ -161,10 +170,14 @@ pub async fn mqtt_task(
         }
         set_state(State::Connecting);
         let new = if use_new { config::staged_password() } else { None };
+        let start = Instant::now();
         match session(stack, port, ca_slot, new.as_deref(), gateway_id, bufs, &mut ota).await {
-            // Was connected: retry soon, with a password staged meanwhile.
+            // Was connected: retry with a password staged meanwhile, soon if it was up
+            // for a while.
             Ok(()) => {
-                backoff = 1;
+                if start.elapsed() >= Duration::from_secs(STABLE_S) {
+                    backoff = 1;
+                }
                 use_new = config::staged_password().is_some();
             }
             Err(e) => {
@@ -180,9 +193,12 @@ pub async fn mqtt_task(
             }
         }
         set_state(State::Backoff);
-        info!("mqtt: reconnecting in {backoff} s");
-        Timer::after_secs(backoff).await;
-        backoff = (backoff * 2).min(60);
+        let mut r = [0u8; 2];
+        tls::random_bytes(&mut r);
+        let wait_ms = backoff * 1000 + u64::from(u16::from_le_bytes(r)) * backoff * 250 / 65536;
+        info!("mqtt: reconnecting in {} ms", wait_ms);
+        Timer::after_millis(wait_ms).await;
+        backoff = (backoff * 2).min(BACKOFF_MAX_S);
     }
 }
 
@@ -367,7 +383,6 @@ async fn session(
     if !ok {
         return Err("publish/subscribe failed");
     }
-    boot::confirm();
 
     let ca_options = PublicationOptions::new(TopicReference::Name(name(&ca_report_topic)));
     // Only tried after a failed handshake with tls.ca0: the broker has moved to the
@@ -397,7 +412,12 @@ async fn session(
     }
 
     let mut ping = Ticker::every(Duration::from_secs(u64::from(KEEP_ALIVE_S) * 2 / 3));
+    // A PINGREQ without PINGRESP by the next ping ends the session (dead broker or path
+    // that TCP alone would only notice after its timeout).
+    let mut ping_pending = false;
     let mut stats_ticker = Ticker::every(Duration::from_secs(STATS_INTERVAL_S));
+    // Granted SUBACKs; the OTA trial image is bought once all are in.
+    let mut granted = 0;
     loop {
         match select4(client.poll_header(), UPLINKS.receive(), ping.next(), stats_ticker.next()).await {
             Either4::First(Ok(header)) => {
@@ -425,6 +445,27 @@ async fn session(
                             None => Incoming::Nothing,
                         },
                     },
+                    // A refused subscription would leave the gateway online but deaf,
+                    // e.g. to downlinks: reconnect (with backoff) until it is granted.
+                    Ok(Event::Suback(s)) if !s.reason_code.is_success() => {
+                        warn!("mqtt: subscription refused: {:?}", s.reason_code);
+                        break;
+                    }
+                    Ok(Event::Suback(_)) => {
+                        granted += 1;
+                        if granted == SUBSCRIPTIONS {
+                            boot::confirm();
+                        }
+                        Incoming::Nothing
+                    }
+                    Ok(Event::PublishRejected(p)) => {
+                        warn!("mqtt: publication refused: {:?}", p.reason_code);
+                        Incoming::Nothing
+                    }
+                    Ok(Event::Pingresp) => {
+                        ping_pending = false;
+                        Incoming::Nothing
+                    }
                     Ok(_) => Incoming::Nothing,
                     Err(e) => {
                         warn!("mqtt: {e:?}");
@@ -488,6 +529,11 @@ async fn session(
                 }
             }
             Either4::Third(()) => {
+                if ping_pending {
+                    warn!("mqtt: no PINGRESP from the broker");
+                    break;
+                }
+                ping_pending = true;
                 if let Err(e) = client.ping().await {
                     warn!("mqtt: ping: {e:?}");
                     break;

@@ -93,7 +93,7 @@ tools/ota-push.py <gateway-id>
 `--user` etc. for another broker). The gateway writes the slot that is not running,
 checks the SHA-256, answers on `state/ota` and reboots into the new image (about 8 s
 for 330 KB). The new image runs as a trial (`trial` line in `status`): it is bought
-once it has connected to the broker and subscribed; otherwise it reboots after 5
+once it has connected to the broker and all subscriptions are granted; otherwise it reboots after 5
 minutes and the old image boots again, as on any reboot before the buy. An update
 is refused while the running image is still on trial (the other slot is its
 fallback). A transfer survives MQTT reconnects (unanswered chunks are resent) but
@@ -314,6 +314,20 @@ mosquitto_sub -h 127.0.0.1 -p 8883 --cafile tools/test-broker/out/ca.pem --insec
 
 Likewise `event/up` with `UplinkFrame` and `state/conn` with `ConnState` (add `-R` to
 skip the retained message and wait for a new one).
+
+### MQTT connection
+
+Every connection is a clean session: resolve `mqtt.host`, TLS, CONNECT with the
+OFFLINE `ConnState` as will, then the retained ONLINE `ConnState`, the subscriptions
+and a first `GatewayStats`. Uplinks queued while disconnected are dropped.
+
+A session ends on a socket error, a refused subscription (SUBACK error, e.g. an ACL
+on a broker that checks at subscribe time), or a ping without PINGRESP by the next
+one (20 s apart, so a dead broker is noticed after 20–40 s; a pulled cable after the
+90 s TCP timeout). Reconnect attempts wait 1 s, doubling up to 60 s, each plus up to
+25 % at random. The wait goes back to 1 s only after a session of at least 60 s, so a
+broker that accepts and drops the gateway again is not hammered. `status` shows
+`disconnected, retrying` meanwhile, the LED 2 blinks.
 
 ## Downlink test
 
