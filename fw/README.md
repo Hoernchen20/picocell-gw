@@ -78,6 +78,10 @@ sector of the other slot.
 
 The firmware runs the watchdog (8 s, fed every second while the executor runs); it
 also takes over the ROM's 16.7 s trial watchdog, which DHCP alone can nearly use up.
+Core 1 (radio HAL) bumps a heartbeat at least every poll; when it stops for 30 s the
+watchdog task resets the chip, and the next boot logs `reset by watchdog forced, core
+1 stalled`. To test it, dev builds have `radio hang` on the console (not in
+`help`): core 1 spins without a heartbeat, and the chip resets about 30 s later.
 
 ### Firmware update over MQTT
 
@@ -323,9 +327,10 @@ and a first `GatewayStats`. Uplinks queued while disconnected are dropped.
 
 A session ends on a socket error, a refused subscription (SUBACK error, e.g. an ACL
 on a broker that checks at subscribe time), or a ping without PINGRESP by the next
-one (20 s apart, so a dead broker is noticed after 20–40 s; a pulled cable after the
-90 s TCP timeout). Reconnect attempts wait 1 s, doubling up to 60 s, each plus up to
-25 % at random. The wait goes back to 1 s only after a session of at least 60 s, so a
+one (20 s apart, so a dead broker is noticed after 20–40 s), or when the W5500 reports
+the Ethernet link down (polled every 500 ms, so a pulled cable ends it within a
+second). Without a link the next attempt waits for it. Reconnect attempts wait 1 s,
+doubling up to 60 s, each plus up to 25 % at random. The wait goes back to 1 s only after a session of at least 60 s, so a
 broker that accepts and drops the gateway again is not hammered. `status` shows
 `disconnected, retrying` meanwhile, the LED 2 blinks.
 
@@ -396,7 +401,9 @@ count on the clock the uplink's `count_us` came from. The counter also has to ad
 with the RP2350 timer (within 2 ms per poll); after 10 polls in a row that it does not
 (SPI lines open, the module lost power) core 1 logs `the SX1302 counter does not
 follow the clock, check SPI` and restarts the module as `radio restart` does. A module
-that then does not answer stays off until the next `radio restart`.
+that does not answer, or whose start fails, is tried again after 30 s, then after
+twice as long each time up to 15 min (`radio` shows when); a successful start resets
+the wait.
 
 Downlinks go out on radio 0 (863–870 MHz) with the TX gain table of the same Semtech
 config (12–27 dBm at the module's connector; the HAL takes the highest entry not

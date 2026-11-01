@@ -632,6 +632,13 @@ async fn command(
                 _ => Err("radio not running"),
             }
         }
+        // Test of the core 1 stall reset (README); not listed in "help".
+        #[cfg(not(feature = "production"))]
+        ("radio", Some("hang"), None) => {
+            o.write(b"core 1 hangs now, the watchdog task resets the chip in 30 s\r\n").await?;
+            radio::hang();
+            Ok(())
+        }
         ("radio", Some(_), None) => Err("\"restart\" or nothing expected"),
         ("otp-key", None, _) => {
             out!(o, "{}\r\n", config_key::Status)?;
@@ -712,6 +719,9 @@ async fn radio_status(o: &mut Out<'_>) -> Result<(), Gone> {
     }
     if let Some(eui) = s.eui {
         out!(o, "eui {eui:016x}\r\n")?;
+    }
+    if let Some(at) = s.retry_at {
+        out!(o, "next attempt in {} s\r\n", at.saturating_duration_since(Instant::now()).as_secs())?;
     }
     if s.state == radio::State::Running {
         out!(o, "rx {} frames ok, {} with crc errors\r\n", s.rx_ok, s.rx_bad)?;

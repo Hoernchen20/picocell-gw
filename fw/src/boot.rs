@@ -14,6 +14,10 @@
 //! someone at the USB port, the recovery path anyway, so that trial is bought at boot
 //! (the ROM reports both as a flash update boot; a mark in a watchdog scratch register
 //! tells them apart).
+//!
+//! The watchdog task also watches core 1: when the radio HAL there stops showing signs
+//! of life (`radio::heartbeat`) for `CORE1_STALL`, it resets the chip, which a hang of
+//! core 1 alone would not.
 
 use core::fmt::{self, Write};
 use core::sync::atomic::{AtomicBool, Ordering};
@@ -24,7 +28,7 @@ use embassy_rp::{pac, rom_data};
 use embassy_time::{Duration, Instant, Timer};
 use log::{info, warn};
 
-use crate::flash;
+use crate::{flash, radio};
 
 // embassy-rp's own IMAGE_DEF is off (`imagedef-none`).
 #[unsafe(link_section = ".start_block")]
@@ -148,6 +152,11 @@ const REBOOT_NO_RETURN_ON_SUCCESS: u32 = 0x100;
 /// In watchdog SCRATCH0 across an OTA reboot ("OTA1"). SCRATCH0 and 1 are free for the
 /// application; the ROM uses 2 to 7.
 const OTA_MARK: u32 = 0x4f54_4131;
+/// In watchdog SCRATCH1 when the watchdog task reset the chip for a stalled core 1
+/// ("CR1S").
+const CORE1_MARK: u32 = 0x4352_3153;
+/// Longest core 1 may go without a heartbeat; `lgw_start` takes a few seconds.
+const CORE1_STALL: Duration = Duration::from_secs(30);
 /// An OTA trial that has not reached the broker by then reboots into the old image.
 pub const BUY_DEADLINE_S: u64 = 300;
 /// Fed every second by `watchdog_task`; the hardware limit is 16.7 s.
@@ -205,11 +214,13 @@ impl fmt::Display for BootInfo {
 }
 
 /// What reset the chip last, from POWMAN and the watchdog.
-fn reset_reason() -> &'static str {
+fn reset_reason(core1_stalled: bool) -> &'static str {
     let wd = pac::WATCHDOG.reason().read();
     let r = pac::POWMAN.chip_reset().read();
     if wd.timer() {
         "watchdog timeout"
+    } else if wd.force() && core1_stalled {
+        "watchdog forced, core 1 stalled"
     } else if wd.force() {
         "watchdog forced"
     } else if r.had_hzd_sys_reset_req() {
@@ -232,11 +243,13 @@ fn reset_reason() -> &'static str {
 pub fn start() {
     let ota = pac::WATCHDOG.scratch0().read() == OTA_MARK;
     pac::WATCHDOG.scratch0().write_value(0);
+    let core1_stalled = pac::WATCHDOG.scratch1().read() == CORE1_MARK;
+    pac::WATCHDOG.scratch1().write_value(0);
     let Some(i) = info() else {
         warn!("boot: no boot info from the ROM");
         return;
     };
-    info!("boot: {i}, reset by {}", reset_reason());
+    info!("boot: {i}, reset by {}", reset_reason(core1_stalled));
     info!("boot: {}", security());
     if let Some(why) = refuse_online() {
         warn!("boot: production build on a board that is not locked ({why}): staying offline");
@@ -293,13 +306,26 @@ pub fn reboot_into(slot_start: u32) -> ! {
 }
 
 /// Feeds the watchdog while the executor runs; this also replaces the ROM's 16.7 s
-/// trial watchdog. Reboots an OTA trial still not bought after `BUY_DEADLINE_S`.
+/// trial watchdog. Reboots an OTA trial still not bought after `BUY_DEADLINE_S`, and
+/// the chip when core 1 stalls.
 #[embassy_executor::task]
 pub async fn watchdog_task(mut wd: Watchdog) -> ! {
     wd.pause_on_debug(true);
     wd.start(WATCHDOG_TIMEOUT);
+    let mut beat = radio::heartbeat();
+    let mut beat_at = Instant::now();
     loop {
         Timer::after_secs(1).await;
+        let b = radio::heartbeat();
+        if b != beat {
+            beat = b;
+            beat_at = Instant::now();
+        } else if beat_at.elapsed() >= CORE1_STALL {
+            warn!("boot: core 1 (radio) stalled for {} s, resetting", beat_at.elapsed().as_secs());
+            Timer::after_millis(200).await;
+            pac::WATCHDOG.scratch1().write_value(CORE1_MARK);
+            wd.trigger_reset();
+        }
         if trial() && Instant::now().as_secs() >= BUY_DEADLINE_S {
             warn!("boot: OTA trial not bought within {BUY_DEADLINE_S} s, rebooting into the old image");
             Timer::after_millis(200).await;

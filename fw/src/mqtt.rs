@@ -24,7 +24,7 @@ use core::fmt::Write;
 use core::num::NonZero;
 use core::sync::atomic::{AtomicU8, Ordering};
 
-use embassy_futures::select::{Either4, select4};
+use embassy_futures::select::{Either, Either4, select, select4};
 use embassy_net::tcp::TcpSocket;
 use embassy_net::Stack;
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
@@ -159,6 +159,8 @@ pub async fn mqtt_task(
     let mut ota = ota::Receiver::new();
     loop {
         set_state(State::WaitNetwork);
+        // A static address stays configured without a link.
+        stack.wait_link_up().await;
         stack.wait_config_up().await;
         // Fail closed (sketch.md section 6): certificate dates cannot be checked yet.
         if !clock::is_set() {
@@ -419,7 +421,9 @@ async fn session(
     // Granted SUBACKs; the OTA trial image is bought once all are in.
     let mut granted = 0;
     loop {
-        match select4(client.poll_header(), UPLINKS.receive(), ping.next(), stats_ticker.next()).await {
+        // A pulled cable ends the session right away instead of after the TCP timeout.
+        let ping_or_link = select(ping.next(), stack.wait_link_down());
+        match select4(client.poll_header(), UPLINKS.receive(), ping_or_link, stats_ticker.next()).await {
             Either4::First(Ok(header)) => {
                 let incoming = match client.poll_body(header).await {
                     Ok(Event::Publish(p)) => match p.topic.name().map(|t| t.as_ref().as_str()) {
@@ -528,7 +532,11 @@ async fn session(
                     break;
                 }
             }
-            Either4::Third(()) => {
+            Either4::Third(Either::Second(())) => {
+                warn!("mqtt: Ethernet link down");
+                break;
+            }
+            Either4::Third(Either::First(())) => {
                 if ping_pending {
                     warn!("mqtt: no PINGRESP from the broker");
                     break;

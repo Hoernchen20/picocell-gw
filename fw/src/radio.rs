@@ -61,6 +61,10 @@ const COUNTER_SLACK_US: u64 = 2000;
 const COUNTER_STRIKES: u32 = 10;
 /// A frame still on air this long after its computed end is stopped.
 const TX_OVERRUN_US: i32 = 100_000;
+/// A module that did not answer or failed to start is tried again after this, doubling
+/// up to `RETRY_MAX`.
+const RETRY_MIN: Duration = Duration::from_secs(30);
+const RETRY_MAX: Duration = Duration::from_secs(15 * 60);
 /// Core 1 runs the HAL; `lgw_receive` and the calibration keep a few KB on the stack.
 const CORE1_STACK: usize = 32 * 1024;
 
@@ -244,6 +248,8 @@ pub struct Status {
     pub tx_failed: u32,
     /// The longest `lgw_send` took since the last start, µs.
     pub tx_load_max_us: u32,
+    /// When core 1 tries again after a failed start.
+    pub retry_at: Option<Instant>,
 }
 
 static STATUS: Mutex<Cell<Status>> = Mutex::new(Cell::new(Status {
@@ -256,8 +262,12 @@ static STATUS: Mutex<Cell<Status>> = Mutex::new(Cell::new(Status {
     tx_ok: 0,
     tx_failed: 0,
     tx_load_max_us: 0,
+    retry_at: None,
 }));
 static RESTART: AtomicBool = AtomicBool::new(false);
+/// Bumped by core 1 at least every poll while it is not inside a longer HAL call
+/// (`lgw_start`), for the watchdog task on core 0.
+static HEARTBEAT: AtomicU32 = AtomicU32::new(0);
 
 /// A frame for `uplink_task`, with the time core 1 fetched it.
 struct Received {
@@ -339,6 +349,27 @@ pub async fn first_eui() -> Option<u64> {
     }
 }
 
+/// Changes as long as core 1 is alive.
+pub fn heartbeat() -> u32 {
+    HEARTBEAT.load(Ordering::Relaxed)
+}
+
+fn beat() {
+    #[cfg(not(feature = "production"))]
+    while HANG.load(Ordering::Relaxed) {}
+    HEARTBEAT.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Set by `hang`: core 1 spins at its next heartbeat.
+#[cfg(not(feature = "production"))]
+static HANG: AtomicBool = AtomicBool::new(false);
+
+/// Stops core 1 for good, as a hung HAL would; dev builds only, to test the stall reset.
+#[cfg(not(feature = "production"))]
+pub fn hang() {
+    HANG.store(true, Ordering::Relaxed);
+}
+
 /// Asks core 1 to stop the HAL, power-cycle the module and start again.
 pub fn restart() {
     RESTART.store(true, Ordering::Release);
@@ -379,7 +410,9 @@ pub fn start(core1: Peri<'static, CORE1>, radio: Radio) {
 fn run(radio: Radio) -> ! {
     let mut c = Concentrator::new(radio).unwrap();
     let mut pkts = [const { Packet::EMPTY }; sx1302::RX_MAX];
+    let mut retry = RETRY_MIN;
     loop {
+        beat();
         update(|s| {
             *s = Status {
                 state: State::Starting,
@@ -391,6 +424,7 @@ fn run(radio: Radio) -> ! {
                 tx_ok: 0,
                 tx_failed: 0,
                 tx_load_max_us: 0,
+                retry_at: None,
             }
         });
         set_counter(None);
@@ -401,7 +435,8 @@ fn run(radio: Radio) -> ! {
         if !probe.answered() {
             warn!("radio: no answer from the SX1302 ({probe})");
             update(|s| s.state = State::NoAnswer);
-            wait_restart();
+            wait_retry(retry);
+            retry = (retry * 2).min(RETRY_MAX);
             continue;
         }
         if !probe.reset {
@@ -412,6 +447,7 @@ fn run(radio: Radio) -> ! {
         let t = Instant::now();
         match c.start(&Conf::EU868) {
             Ok(eui) => {
+                retry = RETRY_MIN;
                 info!("radio: running after {} ms, EU868, eui {eui:016x}", t.elapsed().as_millis());
                 update(|s| {
                     s.state = State::Running;
@@ -422,7 +458,8 @@ fn run(radio: Radio) -> ! {
                 warn!("radio: {} failed", e.0);
                 c.stop();
                 update(|s| s.state = State::Failed(e.0));
-                wait_restart();
+                wait_retry(retry);
+                retry = (retry * 2).min(RETRY_MAX);
                 continue;
             }
         }
@@ -431,6 +468,7 @@ fn run(radio: Radio) -> ! {
         let mut last = None;
         let mut strikes = 0;
         while !RESTART.load(Ordering::Acquire) {
+            beat();
             match c.receive(&mut pkts) {
                 Ok(n) => {
                     let at = Instant::now();
@@ -495,8 +533,13 @@ fn counter_in_step(delta_us: u32, elapsed: Duration) -> bool {
     u64::from(delta_us).abs_diff(elapsed.as_micros()) <= COUNTER_SLACK_US
 }
 
-fn wait_restart() {
-    while !RESTART.load(Ordering::Acquire) {
+/// Until `restart` or `after` has passed.
+fn wait_retry(after: Duration) {
+    info!("radio: trying again in {} s", after.as_secs());
+    let at = Instant::now() + after;
+    update(|s| s.retry_at = Some(at));
+    while !RESTART.load(Ordering::Acquire) && Instant::now() < at {
+        beat();
         drop_pending();
         block_for(Duration::from_millis(10));
     }
