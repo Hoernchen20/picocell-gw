@@ -83,6 +83,18 @@ watchdog task resets the chip, and the next boot logs `reset by watchdog forced,
 1 stalled`. To test it, dev builds have `radio hang` on the console (not in
 `help`): core 1 spins without a heartbeat, and the chip resets about 30 s later.
 
+A panic, or core 0 not getting to the watchdog task for 5 s (TIMER0 alarm 3, routed
+to core 0's NMI, so interrupts off do not hide it), resets the chip at once through
+the watchdog (`src/crash.rs`); the reason survives in RAM and the next boot logs `the
+run before panicked at <file:line>: ...` or `the run before hung: core 0 at pc ...,
+lr ...` (`arm-none-eabi-addr2line -f -C -i -e <elf> <pc>`). A bare `reset by watchdog
+timeout` on a normal boot means neither caught it.
+
+The TRNG is read without `embassy_rp::trng` (`src/tls.rs`): its blocking read spun
+forever once the autocorrelation test had failed four times in a row, which hung
+core 0 in about one boot in three on some days. Now a failed test or a stall resets
+the TRNG (`trng: ... resetting` in the log).
+
 ### Firmware update over MQTT
 
 With the table installed and the gateway connected, from the repository root:

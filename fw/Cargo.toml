@@ -43,7 +43,6 @@ cortex-m-rt = "0.7.0"
 critical-section = "1.1"
 portable-atomic = { version = "1.5", features = ["critical-section"] }
 static_cell = "2.1"
-panic-halt = "1.0"
 wire = { path = "wire" }
 chirpstack = { path = "chirpstack" }
 jit = { path = "jit" }

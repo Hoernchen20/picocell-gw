@@ -28,7 +28,7 @@ use embassy_rp::{pac, rom_data};
 use embassy_time::{Duration, Instant, Timer};
 use log::{info, warn};
 
-use crate::{flash, radio};
+use crate::{crash, flash, radio};
 
 // embassy-rp's own IMAGE_DEF is off (`imagedef-none`).
 #[unsafe(link_section = ".start_block")]
@@ -250,6 +250,9 @@ pub fn start() {
         return;
     };
     info!("boot: {i}, reset by {}", reset_reason(core1_stalled));
+    if let Some(msg) = crash::take() {
+        warn!("boot: the run before {msg}");
+    }
     info!("boot: {}", security());
     if let Some(why) = refuse_online() {
         warn!("boot: production build on a board that is not locked ({why}): staying offline");
@@ -312,6 +315,7 @@ pub fn reboot_into(slot_start: u32) -> ! {
 pub async fn watchdog_task(mut wd: Watchdog) -> ! {
     wd.pause_on_debug(true);
     wd.start(WATCHDOG_TIMEOUT);
+    crash::start_hang_detector();
     let mut beat = radio::heartbeat();
     let mut beat_at = Instant::now();
     loop {
@@ -332,5 +336,6 @@ pub async fn watchdog_task(mut wd: Watchdog) -> ! {
             cortex_m::peripheral::SCB::sys_reset();
         }
         wd.feed(WATCHDOG_TIMEOUT);
+        crash::feed();
     }
 }

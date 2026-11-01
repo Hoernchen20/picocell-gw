@@ -24,6 +24,7 @@ mod led;
 mod login;
 mod mqtt;
 mod ota;
+mod crash;
 mod radio;
 mod resolve;
 mod sntp;
@@ -34,16 +35,14 @@ use embassy_net::{Ipv4Cidr, Stack, StackResources, StaticConfigV4};
 use embassy_net_wiznet::chip::W5500;
 use embassy_net_wiznet::{Device, Runner, State};
 use embassy_rp::gpio::{Input, Level, Output, Pull};
-use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, SPI0, TRNG, USB};
+use embassy_rp::peripherals::{DMA_CH0, DMA_CH1, SPI0, USB};
 use embassy_rp::spi::{Async, Config as SpiConfig, Spi};
-use embassy_rp::trng::Trng;
 use embassy_rp::usb::Driver;
 use embassy_rp::watchdog::Watchdog;
-use embassy_rp::{bind_interrupts, dma, trng, usb};
+use embassy_rp::{bind_interrupts, dma, usb};
 use embassy_time::{Delay, Duration, with_timeout};
 use embedded_hal_bus::spi::ExclusiveDevice;
 use log::{info, warn};
-use panic_halt as _;
 use static_cell::StaticCell;
 use wire::time::Utc;
 
@@ -54,7 +53,6 @@ use crate::radio::Radio;
 
 bind_interrupts!(struct Irqs {
     DMA_IRQ_0 => dma::InterruptHandler<DMA_CH0>, dma::InterruptHandler<DMA_CH1>;
-    TRNG_IRQ => trng::InterruptHandler<TRNG>;
     USBCTRL_IRQ => usb::InterruptHandler<USB>;
 });
 
@@ -137,7 +135,7 @@ async fn main(spawner: Spawner) {
     let led = Output::new(p.PIN_28, Level::High);
     console::init();
 
-    tls::init_rng(Trng::new(p.TRNG, Irqs, Default::default()));
+    tls::init_rng(p.TRNG);
 
     boot::start();
     spawner.spawn(boot::watchdog_task(Watchdog::new(p.WATCHDOG)).unwrap());
