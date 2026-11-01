@@ -1050,9 +1050,10 @@ Milestones:
   covered: a hung HAL stops reception without a reset.
 - Gateway ID: settled, the SX1302 EUI from the first `lgw_start` (core 0 waits for
   it, at most 10 s, before console and network). Fallback when the concentrator does
-  not start: the RP2350 chip ID, which the broker does not know, so a board with a
-  dead module stays offline (no OTA). Storing the EUI in the config partition would
-  keep it online; not done. A swapped WM1302 changes the gateway ID.
+  not start: the EUI of the last start, stored in the config partition (written when
+  it changes), so a board with a dead module stays online for OTA. Without one (never
+  started, or after `erase`) the RP2350 chip ID, which the broker does not know. A
+  swapped WM1302 changes the gateway ID.
 - SNTP and resolver: implemented in `fw/` and tested on hardware (DNS via DHCP and
   static, last known address, NTP by IP, fail closed without a time source; several
   hours with hourly SNTP). The W5500-EVB-Pico2 clock runs ~35 ppm fast (steady

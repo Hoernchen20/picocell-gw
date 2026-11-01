@@ -2,8 +2,10 @@
 //! offset 0x1F0000 (64 KB): `sequential-storage` map items encrypted with AES-128-GCM,
 //! one holding the settings, one the sequence number of the last CA update (sketch.md
 //! section 8.1, 8e; kept by `commit`, so a re-provisioned board still refuses older
-//! updates) and, during a remote password change (sketch.md section 5.2), one holding
-//! the new password next to them until the broker has accepted it.
+//! updates), one the SX1302 EUI of the last concentrator start (the gateway ID when
+//! the module does not start, so the board stays reachable for OTA) and, during a
+//! remote password change (sketch.md section 5.2), one holding the new password next
+//! to them until the broker has accepted it.
 //!
 //! The key comes from `config_key`: in dev builds derived from the chip ID, which
 //! anyone holding the board can read, so that only keeps the secrets out of a plain
@@ -48,6 +50,7 @@ const PARTITION: Range<u32> = 0x1F_0000..0x20_0000;
 const SETTINGS: u8 = 1;
 const NEW_PASSWORD: u8 = 2;
 const CA_SEQ: u8 = 3;
+const EUI: u8 = 4;
 const NONCE: usize = 12;
 const TAG: usize = 16;
 /// The item: format byte, nonce, encrypted settings, tag.
@@ -59,6 +62,7 @@ fn aad(item: u8) -> &'static [u8] {
     match item {
         SETTINGS => b"picocell-gw config",
         CA_SEQ => b"picocell-gw ca sequence",
+        EUI => b"picocell-gw sx1302 eui",
         _ => b"picocell-gw new password",
     }
 }
@@ -83,6 +87,8 @@ static ACTIVE: OnceLock<Settings> = OnceLock::new();
 static STAGED: BlockingMutex<CriticalSectionRawMutex, RefCell<Option<Password>>> =
     BlockingMutex::new(RefCell::new(None));
 static SEQ: BlockingMutex<CriticalSectionRawMutex, Cell<u64>> = BlockingMutex::new(Cell::new(0));
+static STORED_EUI: BlockingMutex<CriticalSectionRawMutex, Cell<Option<u64>>> =
+    BlockingMutex::new(Cell::new(None));
 
 fn storage_error<E>(e: sequential_storage::Error<E>) -> &'static str {
     match e {
@@ -180,6 +186,24 @@ impl Store {
         self.save_settings(s).await
     }
 
+    async fn load_eui(&mut self) -> Result<Option<u64>, &'static str> {
+        match self.load(EUI).await? {
+            Some(8) => Ok(Some(u64::from_le_bytes(self.plain[..8].try_into().unwrap()))),
+            Some(_) => Err("bad length"),
+            None => Ok(None),
+        }
+    }
+
+    async fn save_eui(&mut self, eui: u64) -> Result<(), &'static str> {
+        self.plain[..8].copy_from_slice(&eui.to_le_bytes());
+        self.store(EUI, 8).await?;
+        if self.load_eui().await? != Some(eui) {
+            return Err("read-back differs");
+        }
+        STORED_EUI.lock(|e| e.set(Some(eui)));
+        Ok(())
+    }
+
     async fn drop_password(&mut self) -> Result<(), &'static str> {
         STAGED.lock(|s| s.take());
         self.map.remove_item(&mut self.scratch, &NEW_PASSWORD).await.map_err(storage_error)
@@ -215,6 +239,10 @@ pub async fn init() {
             warn!("CA sequence number unusable ({e}): CA updates refused until \"erase\"");
             SEQ.lock(|s| s.set(u64::MAX));
         }
+    }
+    match store.load_eui().await {
+        Ok(eui) => STORED_EUI.lock(|e| e.set(eui)),
+        Err(e) => warn!("stored SX1302 EUI unusable: {e}"),
     }
     let (mut settings, stored) = match store.load_settings().await {
         Ok(Some(s)) => (s, true),
@@ -346,7 +374,23 @@ pub async fn promote_ca() -> Result<(), &'static str> {
     STORE.lock().await.as_mut().ok_or(NO_STORE)?.save_settings(&s).await
 }
 
-/// Erases the config partition.
+/// The SX1302 EUI stored by `remember_eui`, `None` if none.
+pub fn stored_eui() -> Option<u64> {
+    STORED_EUI.lock(|e| e.get())
+}
+
+/// Stores the EUI of this concentrator start if it differs from the stored one (a new
+/// board or a swapped module), so the flash is written once.
+pub async fn remember_eui(eui: u64) -> Result<(), &'static str> {
+    if stored_eui() == Some(eui) {
+        return Ok(());
+    }
+    STORE.lock().await.as_mut().ok_or(NO_STORE)?.save_eui(eui).await?;
+    info!("SX1302 EUI {eui:016x} stored");
+    Ok(())
+}
+
+/// Erases the config partition, the stored EUI with it.
 pub async fn erase() -> Result<(), &'static str> {
     STORE.lock().await.as_mut().ok_or(NO_STORE)?.map.erase_all().await.map_err(storage_error)
 }

@@ -47,7 +47,7 @@ use static_cell::StaticCell;
 use wire::time::Utc;
 
 use crate::config::Net;
-use crate::ids::Ids;
+use crate::ids::{IdSource, Ids};
 use crate::mqtt::Buffers;
 use crate::radio::Radio;
 
@@ -148,7 +148,7 @@ async fn main(spawner: Spawner) {
     let eui = with_timeout(Duration::from_secs(10), radio::first_eui()).await.ok().flatten();
 
     static IDS: StaticCell<Ids> = StaticCell::new();
-    let ids: &'static Ids = IDS.init(Ids::read(eui));
+    let ids: &'static Ids = IDS.init(Ids::read(eui, config::stored_eui()));
     let m = ids.mac;
     info!(
         "picocell-gw {}, built {}, gateway id {}, mac {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
@@ -156,8 +156,14 @@ async fn main(spawner: Spawner) {
         Utc(config::build_time()),
         ids.gateway_id, m[0], m[1], m[2], m[3], m[4], m[5]
     );
-    if !ids.from_eui {
-        warn!("no SX1302 EUI, gateway id falls back to the chip ID");
+    match ids.source {
+        IdSource::Eui => {
+            if let Err(e) = config::remember_eui(eui.unwrap()).await {
+                warn!("storing the SX1302 EUI: {e}");
+            }
+        }
+        IdSource::StoredEui => warn!("no SX1302 EUI, gateway id from the stored one"),
+        IdSource::ChipId => warn!("no SX1302 EUI, gateway id falls back to the chip ID"),
     }
 
     let usb = Driver::new(p.USB, Irqs);

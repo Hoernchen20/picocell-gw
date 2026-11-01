@@ -13,23 +13,38 @@ fn fnv1a(tag: &[u8], data: &[u8]) -> u64 {
     h
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum IdSource {
+    /// The EUI of this concentrator start.
+    Eui,
+    /// The concentrator did not start: the EUI of an earlier start, from the config.
+    StoredEui,
+    /// Neither: the broker does not know this ID.
+    ChipId,
+}
+
 pub struct Ids {
     /// Locally administered unicast MAC (`x2:xx:xx:xx:xx:xx`).
     pub mac: [u8; 6],
-    /// The SX1302 EUI in hex, or the chip ID if the concentrator did not start.
+    /// The SX1302 EUI in hex, or the chip ID if none is known.
     pub gateway_id: heapless::String<16>,
-    pub from_eui: bool,
+    pub source: IdSource,
 }
 
 impl Ids {
-    /// `eui` from the first concentrator start.
-    pub fn read(eui: Option<u64>) -> Self {
+    /// `eui` from the first concentrator start, `stored` from the config.
+    pub fn read(eui: Option<u64>, stored: Option<u64>) -> Self {
         let chip_id = embassy_rp::otp::get_chipid().unwrap_or(0);
         let h = fnv1a(b"mac", &chip_id.to_be_bytes()).to_be_bytes();
         let mut mac = [h[0], h[1], h[2], h[3], h[4], h[5]];
         mac[0] = (mac[0] & !0x01) | 0x02;
         let mut gateway_id = heapless::String::new();
-        let _ = write!(gateway_id, "{:016x}", eui.unwrap_or(chip_id));
-        Self { mac, gateway_id, from_eui: eui.is_some() }
+        let (id, source) = match (eui, stored) {
+            (Some(e), _) => (e, IdSource::Eui),
+            (None, Some(e)) => (e, IdSource::StoredEui),
+            (None, None) => (chip_id, IdSource::ChipId),
+        };
+        let _ = write!(gateway_id, "{id:016x}");
+        Self { mac, gateway_id, source }
     }
 }

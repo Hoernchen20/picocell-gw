@@ -40,7 +40,7 @@ use static_cell::StaticCell;
 use wire::time::Utc;
 
 use crate::config::Settings;
-use crate::ids::Ids;
+use crate::ids::{IdSource, Ids};
 use crate::{boot, clock, config, config_key, downlink, login, mqtt, radio};
 
 type Usb = Driver<'static, USB>;
@@ -743,7 +743,11 @@ async fn status(o: &mut Out<'_>, ctx: &Context, pending: &Settings) -> Result<()
         let left = boot::BUY_DEADLINE_S.saturating_sub(up);
         out!(o, "trial      OTA image not bought yet: needs the broker within {left} s, else the old image boots\r\n")?;
     }
-    let source = if ctx.ids.from_eui { "SX1302 EUI" } else { "chip ID, the concentrator did not start" };
+    let source = match ctx.ids.source {
+        IdSource::Eui => "SX1302 EUI",
+        IdSource::StoredEui => "stored SX1302 EUI, the concentrator did not start",
+        IdSource::ChipId => "chip ID, no SX1302 EUI known",
+    };
     out!(o, "gateway id {} ({source})\r\n", ctx.ids.gateway_id)?;
     out!(o, "radio      {}\r\n", radio::status().state)?;
     match cfg.missing() {

@@ -204,6 +204,29 @@ impl fmt::Display for BootInfo {
     }
 }
 
+/// What reset the chip last, from POWMAN and the watchdog.
+fn reset_reason() -> &'static str {
+    let wd = pac::WATCHDOG.reason().read();
+    let r = pac::POWMAN.chip_reset().read();
+    if wd.timer() {
+        "watchdog timeout"
+    } else if wd.force() {
+        "watchdog forced"
+    } else if r.had_hzd_sys_reset_req() {
+        "software (SYSRESETREQ)"
+    } else if r.had_run_low() {
+        "RUN pin"
+    } else if r.had_bor() {
+        "brown-out"
+    } else if r.had_por() {
+        "power-on"
+    } else if r.had_dp_reset_req() {
+        "debug port"
+    } else {
+        "unknown"
+    }
+}
+
 /// Logs how the ROM booted the image; buys a trial boot unless it came from an OTA
 /// update, which `confirm()` buys later.
 pub fn start() {
@@ -213,7 +236,7 @@ pub fn start() {
         warn!("boot: no boot info from the ROM");
         return;
     };
-    info!("boot: {i}");
+    info!("boot: {i}, reset by {}", reset_reason());
     info!("boot: {}", security());
     if let Some(why) = refuse_online() {
         warn!("boot: production build on a board that is not locked ({why}): staying offline");
