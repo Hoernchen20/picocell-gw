@@ -53,6 +53,12 @@ const POLL: Duration = Duration::from_millis(10);
 /// Between polls core 1 checks this often for a frame to send and for the end of the one
 /// on air.
 const TX_STEP: Duration = Duration::from_micros(200);
+/// Between two polls the SX1302 counter has to advance as the RP2350 timer does, within
+/// this; it does not with the SPI lines open (reads of 0x00 or 0xff).
+const COUNTER_SLACK_US: u64 = 2000;
+/// Polls in a row with a counter off the timer before the module is restarted. Core 0
+/// pausing core 1 for a flash write between a read and its timestamp costs two.
+const COUNTER_STRIKES: u32 = 10;
 /// A frame still on air this long after its computed end is stopped.
 const TX_OVERRUN_US: i32 = 100_000;
 /// Core 1 runs the HAL; `lgw_receive` and the calibration keep a few KB on the stack.
@@ -422,6 +428,8 @@ fn run(radio: Radio) -> ! {
         }
         drop_pending();
         let mut on_air = None;
+        let mut last = None;
+        let mut strikes = 0;
         while !RESTART.load(Ordering::Acquire) {
             match c.receive(&mut pkts) {
                 Ok(n) => {
@@ -436,8 +444,23 @@ fn run(radio: Radio) -> ! {
                 Err(e) => warn!("radio: {} failed", e.0),
             }
             match c.counter_us() {
-                Ok(cnt) => set_counter(Some((cnt, Instant::now()))),
-                Err(e) => warn!("radio: {} failed", e.0),
+                Ok(cnt) => {
+                    let at = Instant::now();
+                    match last {
+                        Some((c0, t0)) if !counter_in_step(cnt.wrapping_sub(c0), at - t0) => strikes += 1,
+                        _ => strikes = 0,
+                    }
+                    last = Some((cnt, at));
+                    set_counter(Some((cnt, at)));
+                }
+                Err(e) => {
+                    warn!("radio: {} failed", e.0);
+                    strikes += 1;
+                }
+            }
+            if strikes >= COUNTER_STRIKES {
+                warn!("radio: the SX1302 counter does not follow the clock, check SPI");
+                break;
             }
             // Until the next poll, load frames from core 0 and watch the one on air.
             let next = Instant::now() + POLL;
@@ -465,6 +488,11 @@ fn run(radio: Radio) -> ! {
         c.stop();
         drop_pending();
     }
+}
+
+/// True if the counter advanced by `delta_us` in `elapsed`.
+fn counter_in_step(delta_us: u32, elapsed: Duration) -> bool {
+    u64::from(delta_us).abs_diff(elapsed.as_micros()) <= COUNTER_SLACK_US
 }
 
 fn wait_restart() {

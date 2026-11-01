@@ -1043,7 +1043,13 @@ Milestones:
 - Dev vs. production flow: decided, see 8.1 (dev build unsigned, no OTP key, no OTP
   writes, SWD untouched; both current boards stay dev boards).
 - Console access protection: done, see 5.5.
-- LED blink patterns for the states listed in 2.4.
+- LED blink patterns: done, see `fw/README.md` (status LED). Online is steady on
+  with an off flash per frame; problems are 1–3 blinks every 2 s (no link, no broker,
+  no concentrator), offline is a 2 Hz blink.
+- Radio health while running: the SX1302 counter must follow the RP2350 timer, else
+  core 1 restarts the module (open SPI lines are caught within ~100 ms). A module that
+  does not answer is not probed again until `radio restart`; an automatic retry is
+  still open.
 - Stats interval and contents; whether to support `command/config`.
 - Watchdog: settled in 8b (8 s, fed every second by its own task, so it catches a
   stalled executor but not a single stuck task). Core 1 runs the radio and is not

@@ -20,6 +20,7 @@ mod console;
 mod downlink;
 mod flash;
 mod ids;
+mod led;
 mod login;
 mod mqtt;
 mod ota;
@@ -132,6 +133,8 @@ async fn net_log_task(stack: Stack<'static>) -> ! {
 #[embassy_executor::main(executor = "embassy_rp::executor::Executor", entry = "cortex_m_rt::entry")]
 async fn main(spawner: Spawner) {
     let p = embassy_rp::init(Default::default());
+    // On while booting, until led_task takes over.
+    let led = Output::new(p.PIN_28, Level::High);
     console::init();
 
     tls::init_rng(Trng::new(p.TRNG, Irqs, Default::default()));
@@ -171,6 +174,7 @@ async fn main(spawner: Spawner) {
         // Offline until configured on the console (sketch.md section 5.4), and a
         // production build on a board that is not locked for good.
         spawner.spawn(console::console_task(usb, console::Context { stack: None, ids }).unwrap());
+        spawner.spawn(led::led_task(led, None).unwrap());
         return;
     }
 
@@ -218,6 +222,7 @@ async fn main(spawner: Spawner) {
     );
     spawner.spawn(net_task(runner).unwrap());
     spawner.spawn(net_log_task(stack).unwrap());
+    spawner.spawn(led::led_task(led, Some(stack)).unwrap());
     spawner.spawn(console::console_task(usb, console::Context { stack: Some(stack), ids }).unwrap());
     spawner.spawn(sntp::sntp_task(stack).unwrap());
 

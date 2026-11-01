@@ -378,7 +378,11 @@ an FSK frame is logged and dropped), with the SX1302 `count_us` as `context` and
 time core 1 fetched the frame as `gw_time`; `GatewayStats` counts all frames and those
 with a valid CRC. After each poll core 1 also reads the SX1302 counter, and the
 downlink queue extrapolates from that read with the RP2350 timer, so Class A delays
-count on the clock the uplink's `count_us` came from.
+count on the clock the uplink's `count_us` came from. The counter also has to advance
+with the RP2350 timer (within 2 ms per poll); after 10 polls in a row that it does not
+(SPI lines open, the module lost power) core 1 logs `the SX1302 counter does not
+follow the clock, check SPI` and restarts the module as `radio restart` does. A module
+that then does not answer stays off until the next `radio restart`.
 
 Downlinks go out on radio 0 (863–870 MHz) with the TX gain table of the same Semtech
 config (12–27 dBm at the module's connector; the HAL takes the highest entry not
@@ -403,6 +407,20 @@ Desk test with the Seeed WM1302 Pi HAT (Pi header pin numbers): GP10 → 23, GP1
 GP12 ← 21, GP13 → 24, GP14 → 11, GP15 → 12 through 1 kΩ, GP4 ↔ 3 (SDA), GP5 → 5
 (SCL), 4.7 kΩ from SDA and SCL to 3V3 (Pico pin 36), VBUS (Pico pin 40) → 2, GND → 6
 and 25. Antenna on before anything transmits.
+
+## Status LED
+
+GP28, active high. If several apply, the first one shows; the state is taken every
+2 s, so a blink count is never cut:
+
+| LED | State |
+|---|---|
+| on | booting, until the network is set up (a few seconds) |
+| 2 Hz blink | offline: provisioning mode, or a production build that does not go online |
+| 1 blink every 2 s | no Ethernet link |
+| 2 blinks every 2 s | no broker: no address, no time yet, or MQTT not connected |
+| 3 blinks every 2 s | online, but the concentrator is not running (no answer, a HAL call failed) |
+| on, 100 ms off per frame | online; each off flash is a frame received or sent |
 
 ## Hardware-in-the-loop test
 

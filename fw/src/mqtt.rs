@@ -115,6 +115,11 @@ pub fn state() -> &'static str {
     }
 }
 
+/// For the status LED.
+pub fn connected() -> bool {
+    STATE.load(Ordering::Relaxed) == State::Connected as u8
+}
+
 type Topic = heapless::String<80>;
 
 fn topic(gateway_id: &str, suffix: &str) -> Topic {
