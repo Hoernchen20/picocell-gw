@@ -1,5 +1,6 @@
 //! TLS support: RNG driver for `embassy-crypto`, clock and the fail-closed verifier.
 
+use core::cell::Cell;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 // Software SHA-256, HMAC, AES-GCM and P-256 drivers, registered at link time.
@@ -130,14 +131,16 @@ impl TlsClock for Clock {
 }
 
 /// `rustpki` skips the validity dates when the time is unknown; refuse instead
-/// (sketch.md section 6).
+/// (sketch.md section 6). `rejected` is set when `ca` does not accept the broker's
+/// certificate, which a failed handshake does not tell apart from other errors.
 pub struct FailClosed<'a> {
     inner: CertVerifier<'a, Suite, Clock, 2048>,
+    rejected: &'a Cell<bool>,
 }
 
 impl<'a> FailClosed<'a> {
-    pub fn new(ca: &'a [u8]) -> Self {
-        Self { inner: CertVerifier::new(Certificate::X509(ca)) }
+    pub fn new(ca: &'a [u8], rejected: &'a Cell<bool>) -> Self {
+        Self { inner: CertVerifier::new(Certificate::X509(ca)), rejected }
     }
 }
 
@@ -155,7 +158,9 @@ impl TlsVerifier<Suite> for FailClosed<'_> {
             log::warn!("time unknown, refusing the broker certificate");
             return Err(TlsError::InvalidCertificate);
         }
-        self.inner.verify_certificate(transcript, cert)
+        let r = self.inner.verify_certificate(transcript, cert);
+        self.rejected.set(r.is_err());
+        r
     }
 
     fn verify_signature(&mut self, verify: CertificateVerifyRef) -> Result<(), TlsError> {

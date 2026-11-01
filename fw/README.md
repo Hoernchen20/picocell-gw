@@ -180,8 +180,8 @@ provisioning mode and says so on the console.
 | `console.password` | | console login, below; required in production builds |
 | `tls.ca0`, `tls.ca1` | | broker CA (PEM via `ca 0` / `ca 1`); `tls.ca0` required |
 
-With `tls.ca1` set, a failed TLS handshake makes the next attempt use the other slot
-(CA rotation, below). [../tools/provision.py](../tools/provision.py) sends a config file over
+With `tls.ca1` set, a broker certificate the CA in use does not accept makes the next
+attempt use the other slot (CA rotation, below); other TLS failures keep the slot. [../tools/provision.py](../tools/provision.py) sends a config file over
 the console and commits it; for the test broker:
 
 ```sh
@@ -228,8 +228,8 @@ older one `rejected`, so a recorded update cannot be replayed later. It survives
 signature serves all of them, and it may be retained for gateways that are offline.
 An empty certificate clears `tls.ca1`.
 
-Once the broker presents a certificate from the new CA, the handshake with `tls.ca0`
-fails, the next one uses `tls.ca1`, and when that session is up the gateway makes
+Once the broker presents a certificate from the new CA, `tls.ca0` rejects it, the next
+handshake uses `tls.ca1`, and when that session is up the gateway makes
 `tls.ca1` its `tls.ca0`, drops the old CA (`promoted: ...` on `state/ca`) and
 restarts.
 

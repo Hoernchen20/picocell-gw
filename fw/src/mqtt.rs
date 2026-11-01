@@ -20,6 +20,7 @@
 //! `ca_update`, answers to `state/ca`. A session that only came up with `tls.ca1`
 //! makes it `tls.ca0` and restarts.
 
+use core::cell::Cell;
 use core::fmt::Write;
 use core::num::NonZero;
 use core::sync::atomic::{AtomicU8, Ordering};
@@ -156,8 +157,9 @@ pub async fn mqtt_task(
 ) -> ! {
     let port = config::get().mqtt_port();
     let mut backoff = 1u64;
-    // CA slot to verify the broker with; after a failed handshake the other one, if set
-    // (CA rotation, sketch.md section 5.3).
+    // CA slot to verify the broker with; after it rejected the broker's certificate the
+    // other one, if set (CA rotation, sketch.md section 5.3). Other handshake failures
+    // keep it, so disrupting handshakes cannot force the fallback.
     let mut ca_slot = 0;
     // While a new password is staged, attempts alternate between it and the stored one
     // until the broker accepts either; the new one first.
@@ -191,7 +193,7 @@ pub async fn mqtt_task(
             }
             Err(e) => {
                 warn!("mqtt: {e}");
-                if e == TLS_FAILED && !config::get().ca(1 - ca_slot).is_empty() {
+                if e == CERT_REJECTED && !config::get().ca(1 - ca_slot).is_empty() {
                     ca_slot = 1 - ca_slot;
                     info!("mqtt: trying tls.ca{ca_slot}");
                 }
@@ -212,6 +214,7 @@ pub async fn mqtt_task(
 }
 
 const TLS_FAILED: &str = "tls handshake failed";
+const CERT_REJECTED: &str = "tls handshake failed: broker certificate rejected";
 const REFUSED: &str = "broker refused the password";
 
 /// A message on `command/credentials`: the new password, as it is.
@@ -297,9 +300,10 @@ async fn run(
     let tls_config = TlsConfig::new().with_server_name(host);
     let mut tls: TlsConnection<'_, _, Suite> =
         TlsConnection::new(socket, &mut bufs.tls_rx, &mut bufs.tls_tx);
-    tls.open(TlsContext::new(&tls_config, FailClosed::new(cfg.ca(ca_slot))))
+    let rejected = Cell::new(false);
+    tls.open(TlsContext::new(&tls_config, FailClosed::new(cfg.ca(ca_slot), &rejected)))
         .await
-        .map_err(|_| TLS_FAILED)?;
+        .map_err(|_| if rejected.get() { CERT_REJECTED } else { TLS_FAILED })?;
 
     let mut bump = BumpBuffer::new(&mut bufs.mqtt);
     // The first 4: SUBSCRIBEs awaiting their SUBACK, one per subscription below.
@@ -414,8 +418,8 @@ async fn run(
     }
 
     let ca_options = PublicationOptions::new(TopicReference::Name(name(&ca_report_topic)));
-    // Only tried after a failed handshake with tls.ca0: the broker has moved to the
-    // new CA, so the old one goes.
+    // Only tried after tls.ca0 rejected the broker's certificate: the broker has moved
+    // to the new CA, so the old one goes.
     if ca_slot == 1 {
         match config::promote_ca().await {
             Ok(()) => {

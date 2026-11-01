@@ -946,7 +946,7 @@ Milestones:
     typo would block all later updates). Accepted: seq (own map item 3, survives
     `commit`, reset only by `erase`; unreadable → updates refused) then settings with
     `tls.ca1`, answer on `state/ca`, restart. A session that came up with `tls.ca1`
-    (only tried after a failed handshake with `tls.ca0`) makes it `tls.ca0`, clears
+    (only tried after `tls.ca0` rejected the broker certificate) makes it `tls.ca0`, clears
     `tls.ca1` (old CA no longer trusted) and restarts. Public key from `build.rs`:
     `PICOCELL_CONFIG_PUBKEY` (PEM), default `fw/keys/test-config-signing.pub.pem`,
     required by production builds. `PICOCELL_CA` puts a CA into the image; installed
