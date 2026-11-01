@@ -975,140 +975,21 @@ Milestones:
 
 ### 9.1 Firmware
 
+Done items are described in `fw/README.md` and the commit history.
+
 - `embedded-tls`: move from the pinned git rev to the first release after 0.19.0
   once it is out; review upstream changes before bumping the rev.
-- `sx1302_hal` port: done for RX in `fw/sx1302`. Upstream Lora-net V2.1.0, unmodified
-  (Seeed's WM1302 instructions build it as is; no Seeed fork). `shim/shim.c` replaces
-  `loragw_spi.c`, the `*_spi.c` radio files and `loragw_i2c.c` with Rust callbacks,
-  stubs the USB backends, sends `printf` to the log and provides the newlib syscalls
-  (no heap, no files). newlib-nano + libm from the Arm GNU toolchain. +102 KB text,
-  +38 KB data (upstream keeps the four 8 KB AGC/ARB/CAL firmware images non-const, so
-  they are copied to RAM), +40 KB bss incl. the 32 KB core 1 stack. `lgw_start`
-  requires the STTS751 temperature sensor (scans I2C 0x39, 0x3B, 0x38) and fails
-  without it; it is on the module, on I2C0 GP4/GP5. Frames with a valid CRC are
-  published as `UplinkFrame` (LoRa only); the downlink queue runs on the SX1302
-  counter, read after each 10 ms poll and extrapolated with the RP2350 timer. TX:
-  core 0 leaves the frame due next in a one-frame mailbox; core 1 checks it every
-  200 µs between polls, loads it with `lgw_send` (timestamped, the HAL subtracts its
-  start delay), polls `lgw_status` from the frame's computed end until TX_FREE and
-  answers core 0, which only then releases the airtime in the queue. A frame loaded
-  after its trigger time stays TX_SCHEDULED (it would go out after the counter
-  wraps) and is aborted, as is one still on air 100 ms after its end. Tested on the
-  desk: SF12 and SF7/SF10 frames on 869.525 MHz at 14 dBm, `lgw_send` 1.94 ms at
-  2 MHz SPI. SPI now at 7.5 MHz (8 MHz requested, 150 MHz clk_peri): `lgw_send`
-  875–888 µs on the desk.
-- Desk setup (Pi HAT): GP15 → HAT pin 12 switches nothing, so `radio restart` and a
-  Pico reboot rely on the SX1302 reset alone (on the PCB, GP15 switches the buck).
-  That is enough with GP14 on HAT pin 11; with the reset not connected, the next
-  `lgw_start` after the HAL has run fails (SX1250 standby) or SPI reads garbage until
-  the module loses power. The probe checks the reset (page register back to 0).
-- JIT queue (own implementation, the HAL has none): 32-bit `count_us` wrap
-  (~71 min), mapping "Immediately" to a timestamped TX with margin (as Concentratord
-  does), `context` encoding in uplinks so ChirpStack echoes it back, collision and
-  too-late checks.
-- Radio calibration: `rssi_offset` and the TX gain LUT (12–27 dBm, 16 entries) from
-  `global_conf.json.sx1250.EU868` of sx1302_hal V2.1.0, in `sx1302::Conf::EU868`.
-  The HAL sends at the highest entry not above the requested power and at 12 dBm
-  for anything below, so frames below 12 dBm get `TX_POWER`. The power is taken as
-  conducted (no antenna gain subtracted, as lora_pkt_fwd's default). On USB power
-  (TPS2116 ST low on GP27, read per frame) the TX task caps the power at 14 dBm
-  instead of refusing the frame, since ChirpStack asks for 16 dBm (27 dBm on
-  869.525 MHz) and Class A would otherwise not work on the desk. GP27 has the
-  internal pull-down, so without the connector PCB the board counts as on USB.
-- USB console protocol: done. One CDC-ACM
-  port for log and commands (`fw/src/console.rs`, logic host-tested in
-  `fw/console`). 8 KB RAM log history replayed when a terminal opens the port (any
-  control request, then 300 ms quiet: DTR alone is unreliable, minicom clears HUPCL
-  so DTR stays high after close), then live output above the redrawn input line; `log off|warn|info` (RAM only),
-  `log show [n]`, `status`, `reboot`, `bootsel`. Every command ends with `ok` or
-  `error: ...` on its own line, so a provisioning script can send `log off` and read
-  replies. +9 KB text, +8 KB RAM. Config editing: `show` (secrets `***`, CAs as
-  size + SHA-256), `set`, `set mqtt.password` without echo, `unset`, `ca 0|1` (PEM
-  pasted line by line), `clear`, `discard`, `commit` (store + restart), `erase`;
-  `tools/provision.py` sends a config file.
-- Remote password change (5.2): done, `tools/test-broker/rotate-password.sh` drives
-  it on the test broker. +10 KB text, +1 KB RAM.
-- Config schema: done for the keys in use (`fw/settings`, host-tested). One
-  `sequential-storage` map item (key 1) at 0x1F0000: format byte, random 96-bit
-  nonce, AES-128-GCM over the settings (format byte, `key=value` text lines, two CA
-  slots as DER, ≤ 1 KB each), tag; read back after writing. Every value is checked
-  on `set` and on load; an unknown key or format makes the stored config unusable
-  (provisioning mode) rather than silently dropped. Dev key = HMAC-SHA-256 of the
-  chip ID, production key from OTP (8.1, 8d). Keys default as in section 7 (`net.mode`
-  static); `mqtt.username` is fixed to the gateway ID. Not yet: `net.mac`, radio
-  keys, `location`. The build-time `PICOCELL_*` settings are gone. +27 KB text,
-  +22 KB RAM.
-- Dev vs. production flow: decided, see 8.1 (dev build unsigned, no OTP key, no OTP
-  writes, SWD untouched; both current boards stay dev boards).
-- Console access protection: done, see 5.5.
-- LED blink patterns: done, see `fw/README.md` (status LED). Online is steady on
-  with an off flash per frame; problems are 1–3 blinks every 2 s (no link, no broker,
-  no concentrator), offline is a 2 Hz blink.
-- Radio health while running: the SX1302 counter must follow the RP2350 timer, else
-  core 1 restarts the module (open SPI lines are caught within ~100 ms). A module that
-  does not answer is not probed again until `radio restart`; an automatic retry is
-  still open.
-- MQTT reconnect handling: done, see `fw/README.md` (MQTT connection). Each attempt
-  starts a clean session (resolve, TLS, CONNECT, ONLINE, all subscriptions). Backoff
-  1 s doubling to 60 s with up to 25 % jitter, reset only after a session of at least
-  60 s. A missing PINGRESP ends the session after 20–40 s, a refused SUBACK at once;
-  the OTA trial is bought once all four SUBACKs are granted. Tested on the board
-  against Mosquitto (frozen broker, stopped broker). Mosquitto's `acl_file` grants
-  denied subscriptions, so the refused SUBACK is untested. A pulled cable is still
-  noticed by the TCP timeout (90 s).
-- Stats interval and contents; whether to support `command/config`.
-- Watchdog: settled in 8b (8 s, fed every second by its own task, so it catches a
-  stalled executor but not a single stuck task). Core 1 runs the radio and is not
-  covered: a hung HAL stops reception without a reset.
-- Gateway ID: settled, the SX1302 EUI from the first `lgw_start` (core 0 waits for
-  it, at most 10 s, before console and network). Fallback when the concentrator does
-  not start: the EUI of the last start, stored in the config partition (written when
-  it changes), so a board with a dead module stays online for OTA. Without one (never
-  started, or after `erase`) the RP2350 chip ID, which the broker does not know. A
-  swapped WM1302 changes the gateway ID.
-- SNTP and resolver: implemented in `fw/` and tested on hardware (DNS via DHCP and
-  static, last known address, NTP by IP, fail closed without a time source; several
-  hours with hourly SNTP). The W5500-EVB-Pico2 clock runs ~35 ppm fast (steady
-  −126…−138 ms per hourly sync); no drift compensation for now.
-- Protobuf: `fw/chirpstack` generates the messages from ChirpStack v4.20.0 protos
-  (unused mesh/ZMQ/exec messages skipped); `ConnState`, `UplinkFrame` (test frame)
-  and `GatewayStats` (counters still zero, metadata `firmware`/`build`) published,
-  checked against `protoc --decode` in host tests and on hardware (incl. Last Will
-  OFFLINE). +10 KB text.
-- JIT queue: `fw/jit` (host-tested), modelled on the Lora-net `jitqueue.c`: 8
-  frames sorted by `count_us`, wrap-safe offsets, too late below 42.5 ms lead (40 ms
-  + start delay 1.5 ms + margin 1 ms), too early beyond 60 s, collision with start
-  delay and 1 ms margins around each frame's airtime, "Immediately" in the first free
-  slot. The radio task takes a frame 30 ms before its start; its airtime stays blocked
-  until the radio task reports it done, so frames queued meanwhile go after it.
-  With the radio: the next frame is handed over only after TX done. Back to back,
-  that took ~1.3 ms, plus 1.94 ms for `lgw_send`, plus the 1.5 ms start delay: more
-  than the 2.5 ms first reserved before each frame (frame dropped on the desk). The
-  queue now reserves handover 1.5 ms + `lgw_send` 1.5 ms (0.9 ms measured at 7.5 MHz
-  SPI, 3 ms while at 2 MHz) + start delay + margin, so back-to-back frames start
-  6.5 ms apart (at 2 MHz with 3 ms: 4.3–4.8 ms lead left after loading);
-  the radio loads a frame only with at least `lgw_send` + start delay of lead.
-  `DownlinkFrame` items are
-  tried in order, the first accepted one is OK and the rest IGNORED; GPS epoch →
-  `GPS_UNLOCKED`, non-LoRa or other code rates → `INTERNAL_ERROR`, outside
-  863–870 MHz → `TX_FREQ`, above 27 dBm or below 12 dBm → `TX_POWER`. While the
-  concentrator is not running, frames are logged at their start; the RP2350
-  timer stands in for the SX1302 counter and dev builds send test uplinks, which
-  `tools/test-downlink.sh` answers like a Class A downlink.
-- Duty cycle: `fw/jit` `duty`, ETSI EN 300 220-2 / ERC 70-03 sub-bands 863–865 (0.1 %),
-  865–868 (1 %), 868.0–868.6 (1 %), 868.7–869.2 (0.1 %), 869.4–869.65 (10 %, 27 dBm)
-  and 869.7–870 MHz (1 %), all others 16 dBm EIRP. The whole frame (frequency ±
-  bandwidth/2) must lie in one sub-band, else `TX_FREQ`; above the band's power
-  `TX_POWER`. Sliding 1 h window in one-minute buckets (62 per band, 3 KB); a frame is
-  charged to the minute of its start when queued, and the check sums every bucket that
-  may still be in the window, so it is conservative by up to two minutes. Over the
-  limit → `DUTY_CYCLE_OVERFLOW`, checked before the queue. FUOTA bursts on
-  869.525 MHz get the full 360 s per hour and are then refused until airtime ages out;
-  no reservation for Class A RX2 in the same band. Not kept across reboots. Load per
-  band in `GatewayStats.duty_cycle_stats`. Class C (unicast, and multicast with
-  scheduling type Delay, both "immediately") uses the first free slot;
-  `tools/test-classc.sh` tests it. FUOTA test still open (needs ChirpStack and a
-  device).
+- Config keys not yet implemented: `net.mac`, radio keys, `location`.
+- Radio: a module that does not answer is not probed again until `radio restart`;
+  an automatic retry is still open.
+- Core 1 is not covered by the watchdog: a hung HAL stops reception without a reset.
+- MQTT: a refused SUBACK is untested (Mosquitto's `acl_file` grants denied
+  subscriptions). A pulled cable is only noticed by the TCP timeout (90 s); a
+  link-down check would be faster.
+- Whether to support `command/config`.
+- FUOTA test (needs ChirpStack and a device). The duty cycle keeps no reservation for
+  Class A RX2 in the 869.4–869.65 MHz band, so a FUOTA burst can block RX2 for up
+  to an hour.
 
 ### 9.2 Hardware and verification
 
@@ -1135,5 +1016,3 @@ Milestones:
 - Read the leakage of the Eaton PHVL-3R9H474-R from its datasheet (≤ 2 µA wanted);
   measure backup current.
 - Measure the TLS handshake time on the RP2350 (P-256 in software); confirm RAM.
-- Implement the `flash_op`-based read driver for the inactive slot and the config
-  partition; test TBYB update, `explicit_buy` and roll-back on hardware.
