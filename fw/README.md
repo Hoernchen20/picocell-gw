@@ -36,6 +36,55 @@ The broker listens on port 8883 on all interfaces; allow it in the firewall. The
 gateway looks up `mqtt.host` (`mqtt.test`) in its hosts table (`net.hosts`) and checks
 the certificate against that name, so no DNS entry is needed.
 
+### ChirpStack
+
+For tests with real devices, [../tools/chirpstack/](../tools/chirpstack/) runs ChirpStack
+v4.20 with Postgres, Redis and the same broker in Docker. Mosquitto (2.1.2) uses the
+CA, certificate, password file and ACL from `tools/test-broker/out/`, so the gateway
+config and the test-broker scripts stay the same. Stop a local `mosquitto` first, since
+both use port 8883.
+
+```sh
+tools/test-broker/setup.sh            # once, as above
+tools/chirpstack/up.sh                # web UI on http://<host>:8080, admin / admin
+```
+
+ChirpStack reaches the broker on port 1883 inside the compose network as the `admin`
+user. Port 1883 is not published. The EU868 channel plan in
+`configuration/chirpstack/region_eu868.toml` is the gateway's (`Conf::EU868`). For logs
+and `down`, set the same variables as `up.sh` does:
+`HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose -f tools/chirpstack/docker-compose.yml logs -f chirpstack`.
+`down -v` also deletes the database.
+
+Gateway: add the board with `tools/test-broker/add-gateway.sh <gateway-id>`, then in
+the UI under Gateways → Add gateway, enter the same ID and stats interval 30 s (the
+firmware's). The gateway shows as online after its first `event/stats`. The firmware
+does not send a position yet, so set the location in the UI.
+
+Device ([LoraWAN-Mapper](https://github.com/Hoernchen20/LoraWAN-Mapper): ABP, Class A,
+separate 1.1 session keys, frame counter not saved across resets):
+
+1. Device profiles → Add: region EU868, MAC version LoRaWAN 1.1.0, regional parameters
+   RP002-1.0.3, "Device supports OTAA" off. Under Codec, choose JavaScript and paste the
+   ChirpStack decoder from the Mapper's `codec/`.
+2. Applications → Add, then Add device with any DevEUI (ABP does not send it) and the
+   profile from step 1. Under Configuration, turn on "Disable frame-counter
+   validation", because the Mapper starts at 0 after each reset.
+3. On the Activation tab, generate DevAddr, NwkSEncKey, SNwkSIntKey, FNwkSIntKey and
+   AppSKey, and copy them into the Mapper's `config/node_config.h` (MSB first, as
+   shown).
+
+Uplinks appear under the gateway's and the device's "LoRaWAN frames" tabs. Decoded
+events also go to the broker as JSON:
+
+```sh
+mosquitto_sub -h 127.0.0.1 -p 8883 --cafile tools/test-broker/out/ca.pem --insecure \
+    -u admin -P admin-pw -V mqttv5 -t 'application/#' -v
+```
+
+A frame that shows up on the gateway but not on the device usually means wrong keys,
+a wrong MAC version, or a frame counter that ChirpStack rejected.
+
 ## Build and flash
 
 ```sh

@@ -1,0 +1,54 @@
+# ChirpStack v4 with the test broker, for tests with real devices (fw/README.md,
+# "ChirpStack"). Start with ./up.sh; it sets HOST_UID/HOST_GID, the owner of
+# tools/test-broker/out/.
+#
+#   8883  MQTT over TLS (gateways, host tools)   all interfaces
+#   8080  ChirpStack web UI and API              all interfaces
+
+services:
+  chirpstack:
+    image: chirpstack/chirpstack:4.20.0
+    command: -c /etc/chirpstack
+    restart: unless-stopped
+    volumes:
+      - ./configuration/chirpstack:/etc/chirpstack:ro
+    depends_on:
+      - postgres
+      - redis
+      - mosquitto
+    ports:
+      - "8080:8080"
+
+  mosquitto:
+    image: eclipse-mosquitto:2.1.2-alpine
+    restart: unless-stopped
+    # Same user as the files in out/: the password file and key stay mode 600, and the
+    # SIGHUP from the test-broker scripts is allowed.
+    user: "${HOST_UID:?start with ./up.sh}:${HOST_GID:?start with ./up.sh}"
+    volumes:
+      - ./configuration/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ../test-broker/out:/mosquitto/out:ro
+    ports:
+      - "8883:8883"
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: chirpstack
+      POSTGRES_PASSWORD: chirpstack
+      POSTGRES_DB: chirpstack
+    volumes:
+      - ./configuration/postgresql/001-pg_trgm.sql:/docker-entrypoint-initdb.d/001-pg_trgm.sql:ro
+      - postgresdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save 300 1 --save 60 100 --appendonly no
+    volumes:
+      - redisdata:/data
+
+volumes:
+  postgresdata:
+  redisdata:

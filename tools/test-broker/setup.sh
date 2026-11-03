@@ -47,6 +47,8 @@ mosquitto_passwd -b passwd 0016c001ff10a235 secret-pw
 # printf: dash's echo would interpret backslashes in the password.
 printf '%s\n' "$PASSWORD" > gateway-password
 
+touch acl
+chmod 600 acl
 cat > acl <<EOF
 user admin
 topic readwrite #

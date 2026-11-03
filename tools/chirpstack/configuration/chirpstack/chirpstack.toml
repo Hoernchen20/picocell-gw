@@ -1,0 +1,32 @@
+# ChirpStack v4 for the test setup (tools/chirpstack/). Every option not set here keeps
+# its default: `docker compose run --rm chirpstack -c /etc/chirpstack configfile`
+# prints the full template.
+
+[logging]
+  level="info"
+
+[postgresql]
+  dsn="postgresql://chirpstack:chirpstack@postgres/chirpstack?sslmode=disable"
+
+[redis]
+  servers=["redis://redis/"]
+
+[network]
+  net_id="000000"
+  enabled_regions=["eu868"]
+
+[api]
+  bind="0.0.0.0:8080"
+  # Signs the web UI sessions. Test setup only.
+  secret="picocell-test-not-secret"
+
+# Device events as JSON on application/<app id>/device/<dev eui>/event/<event> on the
+# same broker, readable with the admin user.
+[integration]
+  enabled=["mqtt"]
+
+  [integration.mqtt]
+    server="tcp://mosquitto:1883/"
+    username="admin"
+    password="admin-pw"
+    json=true
