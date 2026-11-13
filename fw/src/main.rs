@@ -149,7 +149,7 @@ async fn main(spawner: Spawner) {
     let eui = with_timeout(Duration::from_secs(10), radio::first_eui()).await.ok().flatten();
 
     static IDS: StaticCell<Ids> = StaticCell::new();
-    let ids: &'static Ids = IDS.init(Ids::read(eui, config::stored_eui()));
+    let ids: &'static Ids = IDS.init(Ids::read(eui, config::stored_eui(), config::get().mac()));
     let m = ids.mac;
     info!(
         "picocell-gw {}, built {}, gateway id {}, mac {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",

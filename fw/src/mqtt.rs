@@ -436,7 +436,8 @@ async fn run(
     let stats_options = PublicationOptions::new(TopicReference::Name(name(&stats_topic)));
     let ack_options = PublicationOptions::new(TopicReference::Name(name(&ack_topic)));
     let ota_options = PublicationOptions::new(TopicReference::Name(name(&ota_report_topic)));
-    let mut buf = [0u8; 512];
+    // `GatewayStats` with all duty-cycle bands, metadata and location take up to ~540 B.
+    let mut buf = [0u8; 768];
     // Right away, so ChirpStack shows the gateway online without waiting an interval.
     let n = stats(gateway_id, &mut buf);
     if let Err(e) = client.publish(&stats_options, buf[..n].into()).await {
@@ -620,5 +621,15 @@ fn stats(gateway_id: &str, buf: &mut [u8]) -> usize {
         load_tracked_us: used[i],
     });
     let duty = chirpstack::DutyCycle { window_us: duty::WINDOW_US, bands: &bands };
-    chirpstack::gateway_stats(gateway_id, time_us, &counters, Some(&duty), &metadata, buf).unwrap_or(0)
+    let at = config::get().location().map(|l| chirpstack::Position {
+        latitude: f64::from(l.latitude_e7) / 1e7,
+        longitude: f64::from(l.longitude_e7) / 1e7,
+        altitude: f64::from(l.altitude_cm) / 100.0,
+    });
+    chirpstack::gateway_stats(gateway_id, time_us, &counters, Some(&duty), at.as_ref(), &metadata, buf).unwrap_or_else(
+        |_| {
+            warn!("mqtt: stats do not fit {} B, sent empty", buf.len());
+            0
+        },
+    )
 }

@@ -6,6 +6,10 @@
 //! (`radio::transmit`); while the concentrator is not running it logs the frame at its
 //! start time instead.
 //!
+//! ChirpStack's power is EIRP (checked against the sub-band limit); the radio sends
+//! `radio.antenna_gain` less at the module's connector, but at least the TX gain
+//! table's lowest entry while that keeps within the sub-band limit.
+//!
 //! On USB power (TPS2116 ST low on GP27, sketch.md section 2.4) frames go out at no more
 //! than `USB_MAX_DBM`; the pull-down makes a board without the connector PCB count as
 //! on USB.
@@ -26,6 +30,7 @@ use jit::duty::{self, EU868};
 use jit::{At, Queue};
 use log::{info, warn};
 
+use crate::config;
 use crate::radio::{self, TxError};
 
 /// TX power cap while the board runs on USB VBUS (500 mA budget); as on the desk.
@@ -36,6 +41,7 @@ struct Tx {
     downlink_id: u32,
     airtime_us: u32,
     frequency: u32,
+    /// At the module's connector, dBm.
     power: i32,
     bandwidth: u32,
     spreading_factor: u32,
@@ -129,10 +135,26 @@ fn schedule(id: u32, i: usize, item: &chirpstack::gw::DownlinkFrameItem) -> TxAc
         warn!("downlink {id}/{i}: {} dBm too high for {} MHz", tx.power, EU868[band].name);
         return TxAckStatus::TxPower;
     }
-    // The HAL would send below the LUT at its lowest entry, above the requested power.
+    let gain = i32::from(config::get().antenna_gain());
     let (min, max) = sx1302::Conf::EU868.tx_power_range();
-    if !(i32::from(min)..=i32::from(max)).contains(&tx.power) {
-        warn!("downlink {id}/{i}: {} dBm outside the TX gain table ({min}..{max} dBm)", tx.power);
+    let (min, max) = (i32::from(min), i32::from(max));
+    let mut conducted = tx.power - gain;
+    // ChirpStack's usual 14 dBm EIRP is below the LUT with a few dBi of gain; its lowest
+    // entry is still fine if it keeps within the sub-band limit.
+    if conducted < min && min + gain <= EU868[band].max_eirp_dbm {
+        info!(
+            "downlink {id}/{i}: {} dBm EIRP is {conducted} dBm with {gain} dBi antenna gain, sent at {min} dBm ({} dBm EIRP)",
+            tx.power,
+            min + gain
+        );
+        conducted = min;
+    }
+    // The HAL would send below the LUT at its lowest entry, above the requested power.
+    if !(min..=max).contains(&conducted) {
+        warn!(
+            "downlink {id}/{i}: {} dBm EIRP is {conducted} dBm with {gain} dBi antenna gain, outside the TX gain table ({min}..{max} dBm)",
+            tx.power
+        );
         return TxAckStatus::TxPower;
     }
     let at = match tx.timing {
@@ -168,7 +190,7 @@ fn schedule(id: u32, i: usize, item: &chirpstack::gw::DownlinkFrameItem) -> TxAc
         downlink_id: id,
         airtime_us: airtime,
         frequency: tx.frequency,
-        power: tx.power,
+        power: conducted,
         bandwidth: tx.bandwidth,
         spreading_factor: tx.spreading_factor,
         code_rate: tx.code_rate,

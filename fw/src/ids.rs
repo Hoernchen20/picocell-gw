@@ -1,5 +1,5 @@
 //! Per-board identifiers (sketch.md section 3.4): the MAC derived from the RP2350 unique
-//! chip ID, the gateway ID from the SX1302 EUI.
+//! chip ID unless `net.mac` sets one, the gateway ID from the SX1302 EUI.
 
 use core::fmt::Write;
 
@@ -24,7 +24,7 @@ pub enum IdSource {
 }
 
 pub struct Ids {
-    /// Locally administered unicast MAC (`x2:xx:xx:xx:xx:xx`).
+    /// `net.mac`, else a locally administered unicast MAC (`x2:xx:xx:xx:xx:xx`).
     pub mac: [u8; 6],
     /// The SX1302 EUI in hex, or the chip ID if none is known.
     pub gateway_id: heapless::String<16>,
@@ -32,12 +32,11 @@ pub struct Ids {
 }
 
 impl Ids {
-    /// `eui` from the first concentrator start, `stored` from the config.
-    pub fn read(eui: Option<u64>, stored: Option<u64>) -> Self {
+    /// `eui` from the first concentrator start, `stored` and `mac` from the config.
+    pub fn read(eui: Option<u64>, stored: Option<u64>, mac: Option<[u8; 6]>) -> Self {
         let chip_id = embassy_rp::otp::get_chipid().unwrap_or(0);
         let h = fnv1a(b"mac", &chip_id.to_be_bytes()).to_be_bytes();
-        let mut mac = [h[0], h[1], h[2], h[3], h[4], h[5]];
-        mac[0] = (mac[0] & !0x01) | 0x02;
+        let mac = mac.unwrap_or([(h[0] & !0x01) | 0x02, h[1], h[2], h[3], h[4], h[5]]);
         let mut gateway_id = heapless::String::new();
         let (id, source) = match (eui, stored) {
             (Some(e), _) => (e, IdSource::Eui),

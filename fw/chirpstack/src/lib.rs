@@ -133,6 +133,13 @@ pub struct DutyBand<'a> {
     pub load_tracked_us: u64,
 }
 
+/// A configured position: degrees and metres.
+pub struct Position {
+    pub latitude: f64,
+    pub longitude: f64,
+    pub altitude: f64,
+}
+
 /// ETSI EN 300 220 duty-cycle tracking.
 pub struct DutyCycle<'a> {
     pub window_us: u64,
@@ -144,6 +151,7 @@ pub fn gateway_stats(
     time_us: i64,
     counters: &Counters,
     duty_cycle: Option<&DutyCycle>,
+    location: Option<&Position>,
     metadata: &[(&str, &str)],
     buf: &mut [u8],
 ) -> Result<usize, Overflow> {
@@ -153,6 +161,15 @@ pub fn gateway_stats(
     stats.rx_packets_received_ok = counters.rx_received_ok;
     stats.tx_packets_received = counters.tx_received;
     stats.tx_packets_emitted = counters.tx_emitted;
+    if let Some(p) = location {
+        stats.set_location(common::Location {
+            latitude: p.latitude,
+            longitude: p.longitude,
+            altitude: p.altitude,
+            source: common::LocationSource::Config,
+            ..Default::default()
+        });
+    }
     for (k, v) in metadata {
         stats.metadata.insert(string(k)?, string(v)?).map_err(|_| Overflow)?;
     }
@@ -382,11 +399,18 @@ mod tests {
             load_tracked_us: 1_155_072,
         }];
         let duty = DutyCycle { window_us: 3_600_000_000, bands: &bands };
-        let n = gateway_stats(ID, 1_792_849_845_000_000, &c, Some(&duty), &[("firmware", "0.1.0")], &mut buf)
+        let at = Position { latitude: 51.4416, longitude: 7.3367, altitude: 120.0 };
+        let n = gateway_stats(ID, 1_792_849_845_000_000, &c, Some(&duty), Some(&at), &[("firmware", "0.1.0")], &mut buf)
             .unwrap();
         assert_eq!(lines(&protoc_decode("gw.GatewayStats", &buf[..n])), [
             "time {",
             "seconds: 1792849845",
+            "}",
+            "location {",
+            "latitude: 51.4416",
+            "longitude: 7.3367",
+            "altitude: 120",
+            "source: CONFIG",
             "}",
             "rx_packets_received: 3",
             "rx_packets_received_ok: 2",
@@ -516,7 +540,7 @@ mod tests {
         assert_eq!(conn_state(&"x".repeat(33), true, &mut buf), Err(Overflow));
         let c = Counters::default();
         let meta: [_; 9] = core::array::from_fn(|i| (["a", "b", "c", "d", "e", "f", "g", "h", "i"][i], "1"));
-        assert_eq!(gateway_stats(ID, 0, &c, None, &meta, &mut [0u8; 512]), Err(Overflow));
+        assert_eq!(gateway_stats(ID, 0, &c, None, None, &meta, &mut [0u8; 512]), Err(Overflow));
     }
 
     #[test]

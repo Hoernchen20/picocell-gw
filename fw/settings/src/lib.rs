@@ -36,6 +36,12 @@ enum Kind {
     Secret,
     /// `iterations$salt$hash` of a password (`PasswordHash`).
     Hash,
+    /// `aa:bb:cc:dd:ee:ff`, unicast.
+    Mac,
+    /// Whole dB.
+    Gain,
+    /// `lat,lon[,alt]`.
+    Location,
 }
 
 pub struct Key {
@@ -62,8 +68,9 @@ const fn key(name: &'static str, kind: Kind, default: &'static str) -> Key {
 }
 
 /// The text keys; the CA certificates are `tls.ca0` and `tls.ca1`.
-pub const KEYS: [Key; 11] = [
+pub const KEYS: [Key; 14] = [
     key("net.mode", Kind::Mode, "static"),
+    key("net.mac", Kind::Mac, ""),
     key("net.ipv4", Kind::Cidr, ""),
     key("net.gateway", Kind::Addr, ""),
     key("net.dns", Kind::Addrs, ""),
@@ -74,6 +81,8 @@ pub const KEYS: [Key; 11] = [
     key("mqtt.topic_prefix", Kind::Prefix, "eu868"),
     key("mqtt.password", Kind::Secret, ""),
     key("console.password", Kind::Hash, ""),
+    key("radio.antenna_gain", Kind::Gain, "0"),
+    key("location", Kind::Location, ""),
 ];
 
 pub const CA_KEYS: [&str; CA_SLOTS] = ["tls.ca0", "tls.ca1"];
@@ -119,6 +128,69 @@ fn host_entry(e: &str) -> Option<(&str, Ipv4Addr)> {
     Some((name, addr(a.trim())?))
 }
 
+fn mac(s: &str) -> Option<[u8; 6]> {
+    let mut out = [0; 6];
+    let mut parts = s.split(':');
+    for o in &mut out {
+        let p = parts.next().filter(|p| p.len() == 2)?;
+        *o = u8::from_str_radix(p, 16).ok()?;
+    }
+    // Not multicast (broadcast included) and not all zero.
+    (parts.next().is_none() && out[0] & 0x01 == 0 && out != [0; 6]).then_some(out)
+}
+
+/// Antenna gain minus cable loss.
+fn gain(s: &str) -> Option<i8> {
+    i8::from_str(s).ok().filter(|g| (-20..=20).contains(g))
+}
+
+/// `[-]digits[.digits]` with at most `places` decimals, as an integer in units of
+/// 10^-places; core's float parser would cost ~15 KB of flash.
+fn fixed(s: &str, places: u32) -> Option<i64> {
+    let (neg, s) = match s.strip_prefix('-') {
+        Some(rest) => (true, rest),
+        None => (false, s),
+    };
+    let (int, frac) = s.split_once('.').unwrap_or((s, ""));
+    let digits = |d: &str| d.bytes().all(|b| b.is_ascii_digit());
+    // "51." and ".5" are refused like "5.1.2".
+    if !(1..=6).contains(&int.len()) || !digits(int) || frac.len() > places as usize || !digits(frac) || s.ends_with('.')
+    {
+        return None;
+    }
+    let mut v = i64::from_str(int).ok()?;
+    for i in 0..places as usize {
+        v = v * 10 + frac.as_bytes().get(i).map_or(0, |b| i64::from(b - b'0'));
+    }
+    Some(if neg { -v } else { v })
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Location {
+    /// 10^-7 degrees, north positive.
+    pub latitude_e7: i32,
+    /// 10^-7 degrees, east positive.
+    pub longitude_e7: i32,
+    /// Centimetres.
+    pub altitude_cm: i32,
+}
+
+fn location(s: &str) -> Option<Location> {
+    let mut parts = s.split(',').map(str::trim);
+    let mut num = |places, max: i64| parts.next().and_then(|p| fixed(p, places)).filter(|v| v.abs() <= max);
+    let latitude = num(7, 900_000_000)?;
+    let longitude = num(7, 1_800_000_000)?;
+    let altitude = match parts.next() {
+        None => 0,
+        Some(p) => fixed(p, 2).filter(|v| (-100_000..=1_000_000).contains(v))?,
+    };
+    parts.next().is_none().then_some(Location {
+        latitude_e7: latitude as i32,
+        longitude_e7: longitude as i32,
+        altitude_cm: altitude as i32,
+    })
+}
+
 fn check(kind: Kind, v: &str) -> Result<(), &'static str> {
     let (ok, expected) = match kind {
         Kind::Mode => (matches!(v, "static" | "dhcp"), "static or dhcp expected"),
@@ -151,6 +223,12 @@ fn check(kind: Kind, v: &str) -> Result<(), &'static str> {
         Kind::Hash => (
             PasswordHash::parse(v).is_some(),
             "iterations$salt$hash expected (PBKDF2-HMAC-SHA256, hex), or no value to type the password",
+        ),
+        Kind::Mac => (mac(v).is_some(), "unicast MAC expected, e.g. 02:12:34:56:78:9a"),
+        Kind::Gain => (gain(v).is_some(), "whole dBi from -20 to 20 expected"),
+        Kind::Location => (
+            location(v).is_some(),
+            "latitude,longitude[,altitude] expected, degrees and metres, e.g. 51.4416,7.3367,120",
         ),
     };
     if ok { Ok(()) } else { Err(expected) }
@@ -343,6 +421,21 @@ impl Settings {
         let (address, prefix) = cidr(self.get("net.ipv4")?)?;
         let gateway = self.get("net.gateway").and_then(addr);
         Some(Net::Static { address, prefix, gateway })
+    }
+
+    /// The MAC to use instead of the one derived from the chip ID.
+    pub fn mac(&self) -> Option<[u8; 6]> {
+        self.get("net.mac").and_then(mac)
+    }
+
+    /// dBi; downlink power from ChirpStack is EIRP, the radio sends this much less.
+    pub fn antenna_gain(&self) -> i8 {
+        gain(self.value("radio.antenna_gain")).unwrap_or(0)
+    }
+
+    /// Reported in `GatewayStats` when set.
+    pub fn location(&self) -> Option<Location> {
+        self.get("location").and_then(location)
     }
 
     /// Checked before DNS.
@@ -561,6 +654,16 @@ mod tests {
         assert_eq!(s.text.as_str(), "");
         let long = "x".repeat_into::<64>();
         assert!(s.set("mqtt.host", &long).is_err());
+        for bad in ["01:12:34:56:78:9a", "ff:ff:ff:ff:ff:ff", "00:00:00:00:00:00", "02:12:34:56:78", "02:12:34:56:78:9a:bc", "02-12-34-56-78-9a", "02:12:34:56:78:9"] {
+            assert!(s.set("net.mac", bad).is_err(), "{bad}");
+        }
+        for bad in ["21", "-21", "2.5", ""] {
+            assert!(s.set("radio.antenna_gain", bad).is_err(), "{bad}");
+        }
+        for bad in ["91,7", "90.0000001,7", "51,181", "51", "51,7,120,1", "51,7,20000", "a,b", "NaN,7", "51.,7", ".5,7", "51,7.12345678", "51,7,1.234", "+51,7", "--51,7", "51,7,1e3"] {
+            assert!(s.set("location", bad).is_err(), "{bad}");
+        }
+        assert_eq!(s.text.as_str(), "");
     }
 
     trait RepeatInto {
@@ -588,6 +691,20 @@ mod tests {
         assert_eq!(s.mqtt_password(), r#"p@ss"%{}=\w'rd"#);
         s.set("net.mode", "dhcp").unwrap();
         assert!(matches!(s.net(), Some(Net::Dhcp)));
+
+        assert_eq!(s.mac(), None);
+        s.set("net.mac", "00:1A:2b:3c:4d:5e").unwrap();
+        assert_eq!(s.mac(), Some([0x00, 0x1a, 0x2b, 0x3c, 0x4d, 0x5e]));
+        assert_eq!(s.antenna_gain(), 0);
+        s.set("radio.antenna_gain", "-3").unwrap();
+        assert_eq!(s.antenna_gain(), -3);
+        assert_eq!(s.location(), None);
+        s.set("location", "51.4416, 7.3367").unwrap();
+        assert_eq!(s.location(), Some(Location { latitude_e7: 514416000, longitude_e7: 73367000, altitude_cm: 0 }));
+        s.set("location", "-33.9,-180,-12.05").unwrap();
+        assert_eq!(s.location(), Some(Location { latitude_e7: -339000000, longitude_e7: -1800000000, altitude_cm: -1205 }));
+        s.set("location", "90,0.1234567,10000").unwrap();
+        assert_eq!(s.location(), Some(Location { latitude_e7: 900000000, longitude_e7: 1234567, altitude_cm: 1000000 }));
     }
 
     #[test]

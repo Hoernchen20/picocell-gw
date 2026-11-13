@@ -455,8 +455,9 @@ Decisions and reasons:
   - Resulting struct sizes (host): `UplinkFrame` 920 B, `DownlinkFrame` 1.7 KB,
     `GatewayStats` 3.4 KB, `GatewayConfiguration` 1.3 KB, `DownlinkTxAck` 72 B.
   - Over MQTT only `UplinkFrame`, `GatewayStats`, `DownlinkTxAck`, `ConnState`
-    (out) and `DownlinkFrame`, `GatewayConfiguration` (in) are used; `Event` /
-    `Command` are the Concentratord ZMQ wrappers.
+    (out) and `DownlinkFrame` (in) are used; `GatewayConfiguration` is generated
+    but unused (no `command/config`, section 7); `Event` / `Command` are the
+    Concentratord ZMQ wrappers.
 - **OTA (boot ROM A/B)**: secure boot is already planned with the key hash in OTP,
   so the boot ROM verifies the signature. Two partitions in the partition table,
   the new image is written to the inactive one and booted as TBYB ("try before you
@@ -525,7 +526,6 @@ Topic prefix e.g. `eu868`, gateway ID = SX1302 EUI (hex).
 | publish | `eu868/gateway/<id>/event/ack` | `DownlinkTxAck` |
 | publish (retained) | `eu868/gateway/<id>/state/conn` | `ConnState` ONLINE; Last Will = OFFLINE |
 | subscribe | `eu868/gateway/<id>/command/down` | `DownlinkFrame`; retained ones ignored |
-| subscribe | `eu868/gateway/<id>/command/config` | optional, gateway configuration |
 | subscribe | `eu868/gateway/<id>/command/credentials` | new password, raw text (5.2); not ChirpStack |
 | publish | `eu868/gateway/<id>/state/credentials` | `stored` / `committed` / `rejected: ...` (5.2) |
 
@@ -732,17 +732,20 @@ Keep a DNP footprint on the PCB.
 | `net.gateway` | `10.0.0.1` | Default gateway, optional (broker in same subnet) |
 | `net.dns.servers[0..2]` | `10.0.0.1` | Optional; empty = hosts table only |
 | `net.hosts[0..3]` | `mqtt.example.org` → `10.0.0.5` | Name (≤ 63 chars) + IPv4, checked before DNS |
-| `net.mac` | derived from RP2350 chip ID | Optional override |
+| `net.mac` | derived from RP2350 chip ID | Optional override (unicast) |
 | `mqtt.host` / `mqtt.port` | `mqtt.example.org` / 8883 | Hostname, used for SNI + cert check (see 3.4) |
 | `mqtt.topic_prefix` | `eu868` | |
 | `mqtt.username` / `mqtt.password` | gateway ID / random | Encrypted |
 | `console.password` | PBKDF2 hash | Console login, see 5.5 |
 | `tls.ca[0..1]` | DER | Current + next CA |
 | `ntp.servers` | 3 entries | IP or hostname (resolved via hosts table / DNS) |
-| `radio.region` / channel plan | EU868 8+1+1 | Radio centre freqs, IF offsets |
-| `radio.rssi_offset`, TX gain LUT | from WM1302 reference config | Board-specific |
-| `radio.antenna_gain` | dBi | For EIRP limits |
+| `radio.antenna_gain` | dBi | Downlink power is EIRP; the module sends this much less |
 | `location` | lat/lon/alt | Static, reported in stats |
+
+The channel plan (EU868 8+1+1), RSSI offset and TX gain LUT are the WM1302 reference
+values compiled into the image, not config keys: only EU868 is in use, so no
+`radio.region`. ChirpStack's `command/config` (`GatewayConfiguration`) is not
+supported; ChirpStack only sends it to gateways that report a `config_version`.
 
 ---
 
@@ -979,8 +982,6 @@ Done items are described in `fw/README.md` and the commit history.
 
 - `embedded-tls`: move from the pinned git rev to the first release after 0.19.0
   once it is out; review upstream changes before bumping the rev.
-- Config keys not yet implemented: `net.mac`, radio keys, `location`.
-- Whether to support `command/config`.
 - FUOTA test (needs ChirpStack and a device). The duty cycle keeps no reservation for
   Class A RX2 in the 869.4–869.65 MHz band, so a FUOTA burst can block RX2 for up
   to an hour.

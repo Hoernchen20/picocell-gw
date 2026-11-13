@@ -59,7 +59,7 @@ and `down`, set the same variables as `up.sh` does:
 Gateway: add the board with `tools/test-broker/add-gateway.sh <gateway-id>`, then in
 the UI under Gateways → Add gateway, enter the same ID and stats interval 30 s (the
 firmware's). The gateway shows as online after its first `event/stats`. The firmware
-does not send a position yet, so set the location in the UI.
+sends its position only with `location` set; otherwise set it in the UI.
 
 Device ([LoraWAN-Mapper](https://github.com/Hoernchen20/LoraWAN-Mapper): ABP, Class A,
 separate 1.1 session keys, frame counter not saved across resets):
@@ -217,6 +217,7 @@ provisioning mode and says so on the console.
 | Key | Default | |
 |---|---|---|
 | `net.mode` | `static` | `static` or `dhcp` |
+| `net.mac` | from the chip ID | unicast MAC, e.g. `02:12:34:56:78:9a`; default is locally administered |
 | `net.ipv4` | | address/prefix, e.g. `10.0.0.20/24`; required with `static` |
 | `net.gateway` | | default gateway |
 | `net.dns` | | up to 3 DNS servers, comma-separated; tried before the ones from DHCP |
@@ -227,6 +228,8 @@ provisioning mode and says so on the console.
 | `mqtt.topic_prefix` | `eu868` | |
 | `mqtt.password` | | required; 1 to 64 printable ASCII characters, no blanks; the username is the gateway ID |
 | `console.password` | | console login, below; required in production builds |
+| `radio.antenna_gain` | `0` | dBi minus cable loss, -20 to 20; ChirpStack's downlink power is EIRP, the module sends this much less (at least 12 dBm, the TX gain table's lowest entry, if that stays within the sub-band limit) |
+| `location` | | `latitude,longitude[,altitude]`, degrees (up to 7 decimals) and metres; sent in `GatewayStats` |
 | `tls.ca0`, `tls.ca1` | | broker CA (PEM via `ca 0` / `ca 1`); `tls.ca0` required |
 
 With `tls.ca1` set, a broker certificate the CA in use does not accept makes the next
